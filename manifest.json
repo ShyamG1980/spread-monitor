@@ -1,6 +1,6 @@
 {
-  "name": "Spread Monitor",
-  "short_name": "SpreadMon",
+  "name": "C4U Spread Monitor",
+  "short_name": "C4U Spreads",
   "description": "Per-client, per-instrument trade spread tracking and flagging",
   "start_url": "./index.html",
   "display": "standalone",
