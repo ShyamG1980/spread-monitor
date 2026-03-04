@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spread Monitor</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#0a0e14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SpreadMon">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg:#0a0e14; --surface:#111720; --surface2:#1a2233; --border:#1e2d45;
+    --accent:#00d4ff; --accent2:#ff4d6d; --ok:#00e5a0;
+    --text:#c8d8f0; --text-dim:#5a7090; --text-bright:#eaf2ff;
+    --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;padding:24px;}
+  body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0;}
+  .container{max-width:1400px;margin:0 auto;position:relative;z-index:1;}
+
+  header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px;padding-bottom:18px;border-bottom:1px solid var(--border);}
+  .logo-area h1{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--accent);}
+  .logo-area p{font-size:12px;color:var(--text-dim);margin-top:4px;font-family:var(--mono);}
+  .status-bar{display:flex;gap:24px;}
+  .stat{text-align:right;}
+  .stat-val{font-family:var(--mono);font-size:22px;font-weight:600;display:block;}
+  .stat-val.warn{color:var(--accent2);}.stat-val.ok{color:var(--ok);}.stat-val.neutral{color:var(--accent);}
+  .stat-label{color:var(--text-dim);font-size:11px;font-family:var(--mono);}
+
+  /* Memory banner */
+  .memory-bar{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--ok);border-radius:6px;padding:10px 16px;margin-bottom:18px;font-family:var(--mono);font-size:12px;}
+  .memory-bar.empty{border-left-color:var(--text-dim);}
+  .memory-info{display:flex;align-items:center;gap:12px;}
+  .memory-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);display:inline-block;}
+  .memory-dot.off{background:var(--text-dim);}
+  .memory-actions{display:flex;gap:8px;}
+  .mem-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:4px 12px;border-radius:4px;font-family:var(--mono);font-size:11px;cursor:pointer;}
+  .mem-btn:hover{border-color:var(--accent2);color:var(--accent2);}
+  .mem-btn.view-btn{border-color:var(--border);color:var(--accent);}
+  .mem-btn.view-btn:hover{border-color:var(--accent);}
+
+  /* Upload */
+  .upload-zone{border:1.5px dashed var(--border);border-radius:8px;padding:40px;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--surface);margin-bottom:20px;position:relative;overflow:hidden;}
+  .upload-zone::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 50% 0%,rgba(0,212,255,0.04),transparent 70%);}
+  .upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--surface2);}
+  .upload-zone h3{font-family:var(--mono);font-size:15px;color:var(--text-bright);margin-bottom:6px;}
+  .upload-zone p{font-size:13px;color:var(--text-dim);}
+  .upload-zone input[type=file]{display:none;}
+  .sample-link{color:var(--accent);text-decoration:underline;cursor:pointer;font-size:13px;background:none;border:none;font-family:var(--sans);padding:0;}
+
+  /* Mapper */
+  .mapper{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;margin-bottom:20px;display:none;}
+  .mapper h3{font-family:var(--mono);font-size:12px;color:var(--accent);margin-bottom:14px;text-transform:uppercase;letter-spacing:1px;}
+  .mapper-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:16px;}
+  .map-field label{display:block;font-size:11px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
+  .map-field select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text-bright);padding:8px 10px;border-radius:5px;font-family:var(--mono);font-size:12px;cursor:pointer;outline:none;}
+  .map-field select:focus{border-color:var(--accent);}
+  .note{font-size:12px;color:var(--text-dim);font-family:var(--mono);margin-top:12px;padding:10px 14px;background:var(--surface2);border-left:3px solid var(--accent);border-radius:0 5px 5px 0;}
+
+  .btn{background:var(--accent);color:var(--bg);border:none;padding:10px 22px;border-radius:5px;font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;transition:opacity 0.15s;}
+  .btn:hover{opacity:0.85;}
+  .btn-secondary{background:transparent;color:var(--text-dim);border:1px solid var(--border);margin-left:8px;}
+  .btn-secondary:hover{border-color:var(--text-dim);color:var(--text);opacity:1;}
+
+  /* Tabs */
+  .tabs{display:flex;gap:0;margin-bottom:0;border-bottom:1px solid var(--border);}
+  .tab{font-family:var(--mono);font-size:12px;padding:10px 20px;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all 0.15s;}
+  .tab:hover{color:var(--text);}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .tab-panel{display:none;padding-top:16px;}
+  .tab-panel.active{display:block;}
+
+  /* Filters */
+  .filters{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+  .filter-group{display:flex;align-items:center;gap:7px;}
+  .filter-group label{font-size:11px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;}
+  .filter-group select,.filter-group input{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:5px;font-family:var(--mono);font-size:12px;outline:none;}
+  .toggle-flag{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;cursor:pointer;color:var(--text-dim);margin-left:auto;}
+  .toggle-flag input{cursor:pointer;accent-color:var(--accent2);}
+  .toggle-flag.active{color:var(--accent2);}
+  .export-btn{background:transparent;color:var(--ok);border:1px solid rgba(0,229,160,0.3);padding:6px 14px;border-radius:5px;font-family:var(--mono);font-size:12px;cursor:pointer;}
+  .export-btn:hover{background:rgba(0,229,160,0.1);}
+
+  /* Table */
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;overflow-x:auto;}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;}
+  thead tr{background:var(--surface2);border-bottom:1px solid var(--border);}
+  th{padding:11px 14px;text-align:left;font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.8px;font-weight:500;cursor:pointer;user-select:none;white-space:nowrap;}
+  th:hover{color:var(--accent);}
+  tbody tr{border-bottom:1px solid var(--border);transition:background 0.1s;}
+  tbody tr:last-child{border-bottom:none;}
+  tbody tr:hover{background:var(--surface2);}
+  tbody tr.flagged{background:rgba(255,77,109,0.05);}
+  tbody tr.flagged:hover{background:rgba(255,77,109,0.1);}
+  td{padding:10px 14px;color:var(--text);vertical-align:middle;white-space:nowrap;}
+  .spread-ok{color:var(--ok);font-weight:600;}.spread-warn{color:var(--accent2);font-weight:600;}.spread-neutral{color:var(--text-dim);font-weight:600;}
+  .diff-pos{color:var(--ok);}.diff-neg{color:var(--accent2);}
+  .flag-badge{background:rgba(255,77,109,0.15);color:var(--accent2);border:1px solid rgba(255,77,109,0.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600;}
+  .ok-badge{background:rgba(0,229,160,0.1);color:var(--ok);border:1px solid rgba(0,229,160,0.2);padding:2px 7px;border-radius:3px;font-size:10px;}
+  .first-badge{background:rgba(0,212,255,0.08);color:var(--accent);border:1px solid rgba(0,212,255,0.2);padding:2px 7px;border-radius:3px;font-size:10px;font-style:italic;}
+  .pair-pill{background:var(--surface2);color:var(--accent);border:1px solid var(--border);padding:2px 8px;border-radius:3px;font-size:11px;}
+  .new-badge{background:rgba(255,184,48,0.12);color:#ffb830;border:1px solid rgba(255,184,48,0.3);padding:2px 6px;border-radius:3px;font-size:9px;margin-left:5px;vertical-align:middle;}
+
+  .pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+  .page-btns{display:flex;gap:5px;}
+  .page-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-family:var(--mono);font-size:12px;}
+  .page-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .page-btn.active{background:var(--accent);color:var(--bg);border-color:var(--accent);}
+  .page-btn:disabled{opacity:0.3;cursor:default;}
+  .empty{padding:50px;text-align:center;color:var(--text-dim);font-family:var(--mono);font-size:13px;}
+
+  /* History tab */
+  .history-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
+  .history-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 16px;}
+  .history-card h4{font-family:var(--mono);font-size:12px;color:var(--text-bright);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+  .history-card p{font-size:11px;color:var(--text-dim);font-family:var(--mono);line-height:1.7;}
+  .history-card .del-btn{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;padding:0 2px;}
+  .history-card .del-btn:hover{color:var(--accent2);}
+
+  /* Confirmation modal */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:28px;max-width:400px;width:90%;text-align:center;}
+  .modal h3{font-family:var(--mono);font-size:15px;color:var(--accent2);margin-bottom:10px;}
+  .modal p{font-size:13px;color:var(--text-dim);margin-bottom:20px;line-height:1.5;}
+  .modal-btns{display:flex;gap:10px;justify-content:center;}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="logo-area">
+      <h1>⬡ SPREAD MONITOR</h1>
+      <p>Per-client · per-instrument · cross-session tracking</p>
+    </div>
+    <div class="status-bar" id="statusBar">
+      <div class="stat"><span class="stat-val neutral" id="statTotal">0</span><span class="stat-label">Stored Trades</span></div>
+      <div class="stat"><span class="stat-val neutral" id="statPairs">0</span><span class="stat-label">Client/Pairs</span></div>
+      <div class="stat"><span class="stat-val warn" id="statFlagged">—</span><span class="stat-label">Last Upload Flags</span></div>
+    </div>
+  </header>
+
+  <!-- Memory banner -->
+  <div class="memory-bar" id="memoryBar">
+    <div class="memory-info">
+      <span class="memory-dot" id="memDot"></span>
+      <span id="memText" style="font-family:var(--mono);font-size:12px;color:var(--text-dim)">Loading...</span>
+    </div>
+    <div class="memory-actions">
+      <button class="mem-btn view-btn" onclick="switchTab('history')">View History</button>
+      <button class="mem-btn" onclick="confirmClear()">Clear All Data</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" id="tab-upload" onclick="switchTab('upload')">Upload New File</div>
+    <div class="tab" id="tab-results" onclick="switchTab('results')">Results</div>
+    <div class="tab" id="tab-history" onclick="switchTab('history')">Upload History</div>
+  </div>
+
+  <!-- Upload panel -->
+  <div class="tab-panel active" id="panel-upload">
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+      <span style="font-size:32px;display:block;margin-bottom:12px">📂</span>
+      <h3>Drop your CSV or Excel file here</h3>
+      <p>Compared against all previously stored trades &nbsp;·&nbsp; <button class="sample-link" onclick="event.stopPropagation();loadSample()">load sample data</button></p>
+    </div>
+
+    <div class="mapper" id="mapper">
+      <h3>// Map your columns</h3>
+      <div class="mapper-grid" id="mapperGrid"></div>
+      <button class="btn" onclick="applyMapping()">Analyse & Save Trades</button>
+      <button class="btn btn-secondary" onclick="resetUpload()">Cancel</button>
+      <div class="note" id="mapperNote"></div>
+    </div>
+  </div>
+
+  <!-- Results panel -->
+  <div class="tab-panel" id="panel-results">
+    <div class="filters" id="filtersBar">
+      <div class="filter-group">
+        <label>Client</label>
+        <select id="filterClient" onchange="renderTable()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Pair</label>
+        <select id="filterPair" onchange="renderTable()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Trader</label>
+        <select id="filterTrader" onchange="renderTable()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Upload</label>
+        <select id="filterUpload" onchange="renderTable()"><option value="">All uploads</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Search</label>
+        <input type="text" id="filterSearch" placeholder="Search..." oninput="renderTable()">
+      </div>
+      <label class="toggle-flag" id="toggleFlagLabel">
+        <input type="checkbox" id="filterFlagged" onchange="updateFlagToggle();renderTable()">
+        Flagged only
+      </label>
+      <button class="export-btn" onclick="exportFlagged()">↓ Export Flagged</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead id="tableHead"></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+  <!-- History panel -->
+  <div class="tab-panel" id="panel-history">
+    <div id="historyContent"></div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3>⚠ Clear All Data?</h3>
+    <p>This will permanently delete all stored trades and upload history from your browser. This cannot be undone.</p>
+    <div class="modal-btns">
+      <button class="btn" style="background:var(--accent2)" onclick="clearAllData()">Yes, Clear Everything</button>
+      <button class="btn btn-secondary" style="margin-left:0" onclick="document.getElementById('modalOverlay').classList.remove('show')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Storage keys ──────────────────────────────────────────────────
+const STORAGE_TRADES    = 'sm_trades_v2';
+const STORAGE_SNAPSHOTS = 'sm_snapshots_v2';
+const STORAGE_LASTMAP   = 'sm_lastmap_v2';
+
+// ── State ─────────────────────────────────────────────────────────
+let allTrades = [];       // all stored processed trades
+let snapshots = [];       // upload session metadata
+let lastResults = [];     // results from most recent upload
+let rawData = [], columns = [];
+let mapping = { client:'',spread:'',date:'',trader:'',pair:'',buy:'',sell:'',volume:'' };
+let sortCol = null, sortDir = -1, currentPage = 1;
+const PAGE_SIZE = 25;
+
+const FIELD_DEFS = [
+  { key:'client', label:'Client Name *',             required:true,  hints:['client','customer','account','name'] },
+  { key:'spread', label:'Spread (%) *',              required:true,  hints:['spread'] },
+  { key:'date',   label:'Trade Date',                required:false, hints:['date','time','tradedate','timestamp'] },
+  { key:'pair',   label:'Currency Pair / Instrument',required:false, hints:['pair','ccy','currency','instrument','symbol','product'] },
+  { key:'buy',    label:'Buy Price',                 required:false, hints:['buy','bid','buyprice'] },
+  { key:'sell',   label:'Sell Price',                required:false, hints:['sell','ask','offer','sellprice'] },
+  { key:'volume', label:'Volume / Notional',         required:false, hints:['volume','notional','amount','size','qty','quantity'] },
+  { key:'trader', label:'Trader Name',               required:false, hints:['trader','sales','user','dealer','broker'] },
+];
+
+// ── Init ──────────────────────────────────────────────────────────
+function init() {
+  try {
+    const stored = localStorage.getItem(STORAGE_TRADES);
+    allTrades = stored ? JSON.parse(stored) : [];
+    const snaps = localStorage.getItem(STORAGE_SNAPSHOTS);
+    snapshots = snaps ? JSON.parse(snaps) : [];
+    const lm = localStorage.getItem(STORAGE_LASTMAP);
+    if (lm) mapping = { ...mapping, ...JSON.parse(lm) };
+  } catch(e) { allTrades = []; snapshots = []; }
+  updateMemoryBanner();
+  updateHeaderStats();
+  if (allTrades.length > 0) {
+    buildFiltersFromAll();
+    renderTable();
+  }
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_TRADES, JSON.stringify(allTrades));
+    localStorage.setItem(STORAGE_SNAPSHOTS, JSON.stringify(snapshots));
+    localStorage.setItem(STORAGE_LASTMAP, JSON.stringify(mapping));
+  } catch(e) {
+    alert('Storage full — try clearing old upload sessions from the History tab.');
+  }
+}
+
+// ── Memory banner ─────────────────────────────────────────────────
+function updateMemoryBanner() {
+  const bar = document.getElementById('memoryBar');
+  const dot = document.getElementById('memDot');
+  const txt = document.getElementById('memText');
+  if (allTrades.length === 0) {
+    bar.classList.add('empty');
+    dot.classList.add('off');
+    txt.textContent = 'No stored data — upload your first file to begin tracking.';
+  } else {
+    bar.classList.remove('empty');
+    dot.classList.remove('off');
+    const oldest = snapshots.length ? snapshots[0].date : '?';
+    const newest = snapshots.length ? snapshots[snapshots.length-1].date : '?';
+    txt.textContent = `Memory active · ${allTrades.length} trades · ${snapshots.length} upload${snapshots.length!==1?'s':''} · ${oldest} → ${newest}`;
+  }
+}
+
+function updateHeaderStats() {
+  document.getElementById('statTotal').textContent = allTrades.length;
+  const pairs = new Set(allTrades.map(r => r.client + '||' + (r.pair||''))).size;
+  document.getElementById('statPairs').textContent = pairs;
+  const lastSnap = snapshots[snapshots.length - 1];
+  document.getElementById('statFlagged').textContent = lastSnap ? lastSnap.flagged : '—';
+}
+
+// ── File upload ───────────────────────────────────────────────────
+const zone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+zone.addEventListener('dragover', e=>{e.preventDefault();zone.classList.add('drag');});
+zone.addEventListener('dragleave', ()=>zone.classList.remove('drag'));
+zone.addEventListener('drop', e=>{e.preventDefault();zone.classList.remove('drag');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+fileInput.addEventListener('change', ()=>{if(fileInput.files[0])handleFile(fileInput.files[0]);});
+
+function handleFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext==='csv') { Papa.parse(file,{header:true,skipEmptyLines:true,complete:r=>initData(r.data,file.name)}); }
+  else { const r=new FileReader(); r.onload=e=>{const wb=XLSX.read(e.target.result,{type:'array'}); initData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}),file.name);}; r.readAsArrayBuffer(file); }
+}
+
+function initData(data, filename) {
+  rawData = data;
+  columns = Object.keys(data[0]||{});
+  buildMapper(filename);
+}
+
+// ── Mapper ────────────────────────────────────────────────────────
+function autoMatch(col, hints) {
+  const c = col.toLowerCase().replace(/[_\s-]/g,'');
+  return hints.some(h => c.includes(h.replace(/[_\s-]/g,'')));
+}
+
+function buildMapper(filename) {
+  document.getElementById('mapper').style.display = 'block';
+  document.getElementById('uploadZone').style.display = 'none';
+  document.getElementById('mapperGrid').innerHTML = FIELD_DEFS.map(f => `
+    <div class="map-field">
+      <label>${f.label}</label>
+      <select id="map_${f.key}">
+        <option value="">— not mapped —</option>
+        ${columns.map(c=>`<option value="${c}"${(mapping[f.key]===c||(!mapping[f.key]&&autoMatch(c,f.hints)))?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </div>`).join('');
+  document.getElementById('mapperNote').textContent = `${filename} · ${rawData.length} rows · ${columns.length} columns`;
+}
+
+function applyMapping() {
+  FIELD_DEFS.forEach(f => mapping[f.key] = document.getElementById('map_'+f.key).value);
+  if (!mapping.client||!mapping.spread) { alert('Please map Client Name and Spread at minimum.'); return; }
+  processAndStore();
+}
+
+// ── Process & store ───────────────────────────────────────────────
+function parseDate(val) {
+  if (!val) return null;
+  const d = new Date(val);
+  return isNaN(d) ? null : d;
+}
+
+function processAndStore() {
+  // Build lookup of the most recent trade (by trade date) per client+pair from existing history
+  // Stores { spread, date } so we can compare dates properly
+  const lastKnown = {};
+  allTrades.forEach(r => {
+    const key = r.client + '||' + (r.pair||'__any__');
+    const existing = lastKnown[key];
+    const rDate = parseDate(r.date);
+    const exDate = existing ? parseDate(existing.date) : null;
+    // Replace if no existing, or this trade is newer (or same date — last wins)
+    if (!existing || !exDate || (rDate && rDate >= exDate)) {
+      lastKnown[key] = { spread: r.spread, date: r.date };
+    }
+  });
+
+  // Also track within this upload
+  const withinUpload = {};
+
+  let rows = rawData.map((r,i) => ({
+    _idx: i,
+    client:  String(r[mapping.client]||'').trim(),
+    spread:  parseFloat(String(r[mapping.spread]||'0').replace(/[%,]/g,'')),
+    date:    mapping.date   ? r[mapping.date]   : '',
+    pair:    mapping.pair   ? String(r[mapping.pair]||'').trim().toUpperCase() : '',
+    buy:     mapping.buy    ? parseFloat(String(r[mapping.buy]||'').replace(/,/g,''))   : null,
+    sell:    mapping.sell   ? parseFloat(String(r[mapping.sell]||'').replace(/,/g,''))  : null,
+    volume:  mapping.volume ? r[mapping.volume] : '',
+    trader:  mapping.trader ? String(r[mapping.trader]||'').trim() : '',
+  })).filter(r => r.client && !isNaN(r.spread));
+
+  // Sort chronologically within upload
+  if (mapping.date) {
+    rows.sort((a,b) => {
+      const da=new Date(a.date),db=new Date(b.date);
+      return (!isNaN(da)&&!isNaN(db)) ? da-db : String(a.date).localeCompare(String(b.date));
+    });
+  }
+
+  const uploadId = Date.now().toString();
+  const uploadDate = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+  const newTrades = rows.map(r => {
+    const key = r.client + '||' + (r.pair||'__any__');
+
+    // Get best previous entry: cross-session takes priority, else within-upload
+    const prevEntry = lastKnown[key] !== undefined ? lastKnown[key] : withinUpload[key];
+
+    let status, diff, prevSpread;
+
+    if (!prevEntry) {
+      // No prior trade for this client+pair at all
+      status = 'first';
+      diff = null;
+      prevSpread = null;
+    } else {
+      prevSpread = prevEntry.spread;
+      diff = r.spread - prevSpread;
+      const thisDate  = parseDate(r.date);
+      const prevDate  = parseDate(prevEntry.date);
+
+      if (!thisDate || !prevDate) {
+        // No date info available — fall back to spread-only comparison
+        status = r.spread >= prevSpread ? 'ok' : 'flagged';
+      } else if (thisDate > prevDate) {
+        // This trade is strictly newer — apply the spread check
+        status = r.spread >= prevSpread ? 'ok' : 'flagged';
+      } else {
+        // Same date or older — do not flag, just mark as ok
+        status = 'ok';
+      }
+    }
+
+    // Update trackers with the most recent trade for this key
+    const newEntry = { spread: r.spread, date: r.date };
+    withinUpload[key] = newEntry;
+    // Only update lastKnown if this trade is newer or no entry exists
+    const existing = lastKnown[key];
+    const existingDate = existing ? parseDate(existing.date) : null;
+    const thisDate2 = parseDate(r.date);
+    if (!existing || !existingDate || (thisDate2 && thisDate2 >= existingDate)) {
+      lastKnown[key] = newEntry;
+    }
+
+    return { ...r, prev: prevSpread, status, diff, _uploadId: uploadId, _uploadDate: uploadDate };
+  });
+
+  const flagCount = newTrades.filter(r => r.status === 'flagged').length;
+
+  // Append to stored trades
+  allTrades = [...allTrades, ...newTrades];
+  snapshots.push({ id: uploadId, date: uploadDate, count: newTrades.length, flagged: flagCount });
+  lastResults = newTrades;
+
+  save();
+  updateMemoryBanner();
+  updateHeaderStats();
+  buildFiltersFromAll();
+
+  // Show results
+  document.getElementById('mapper').style.display = 'none';
+  document.getElementById('uploadZone').style.display = 'block';
+  fileInput.value = '';
+
+  // Switch to results tab, show newest upload
+  document.getElementById('filterUpload').value = uploadId;
+  switchTab('results');
+  renderTable();
+  renderHistory();
+}
+
+// ── Filters ───────────────────────────────────────────────────────
+function buildFiltersFromAll() {
+  const add = (id, vals, extra) => {
+    const s = document.getElementById(id);
+    const cur = s.value;
+    while (s.options.length > 1) s.remove(1);
+    vals.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; s.appendChild(o); });
+    if (cur) s.value = cur;
+  };
+  add('filterClient', [...new Set(allTrades.map(r=>r.client))].sort());
+  add('filterPair',   [...new Set(allTrades.map(r=>r.pair).filter(Boolean))].sort());
+  add('filterTrader', [...new Set(allTrades.map(r=>r.trader).filter(Boolean))].sort());
+  const fu = document.getElementById('filterUpload');
+  const curU = fu.value;
+  while (fu.options.length > 1) fu.remove(1);
+  [...snapshots].reverse().forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = `${s.date} (${s.count} trades, ${s.flagged} flagged)`;
+    fu.appendChild(o);
+  });
+  if (curU) fu.value = curU;
+}
+
+// ── Table ─────────────────────────────────────────────────────────
+function getFiltered() {
+  const fc = document.getElementById('filterClient').value;
+  const fp = document.getElementById('filterPair').value;
+  const ft = document.getElementById('filterTrader').value;
+  const fu = document.getElementById('filterUpload').value;
+  const fs = document.getElementById('filterSearch').value.toLowerCase();
+  const ff = document.getElementById('filterFlagged').checked;
+  return allTrades.filter(r => {
+    if (fc && r.client !== fc) return false;
+    if (fp && r.pair !== fp) return false;
+    if (ft && r.trader !== ft) return false;
+    if (fu && r._uploadId !== fu) return false;
+    if (ff && r.status !== 'flagged') return false;
+    if (fs && !JSON.stringify([r.client,r.pair,r.trader,r.date,r.spread]).toLowerCase().includes(fs)) return false;
+    return true;
+  });
+}
+
+function renderTable() { currentPage=1; renderPage(); }
+
+function renderPage() {
+  if (allTrades.length === 0) {
+    document.getElementById('tableBody').innerHTML = `<tr><td colspan="99" class="empty">No trades stored yet — upload a file to begin.</td></tr>`;
+    document.getElementById('tableHead').innerHTML = '';
+    document.getElementById('pagination').style.display = 'none';
+    return;
+  }
+
+  const filtered = getFiltered(), total = filtered.length, pages = Math.ceil(total/PAGE_SIZE);
+  let slice = [...filtered.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE)];
+  if (sortCol) slice.sort((a,b)=>{let av=a[sortCol]??'',bv=b[sortCol]??''; return(typeof av==='number'&&typeof bv==='number')?(av-bv)*sortDir:String(av).localeCompare(String(bv))*sortDir;});
+
+  // Detect which optional columns are actually used in current data
+  const hasPair   = allTrades.some(r=>r.pair);
+  const hasBuy    = allTrades.some(r=>r.buy!==null&&!isNaN(r.buy));
+  const hasSell   = allTrades.some(r=>r.sell!==null&&!isNaN(r.sell));
+  const hasVolume = allTrades.some(r=>r.volume!=='');
+  const hasTrader = allTrades.some(r=>r.trader);
+  const hasDate   = allTrades.some(r=>r.date);
+
+  const cols = [
+    { key:'_uploadDate', label:'Upload' },
+    hasDate   && { key:'date',   label:'Trade Date' },
+    { key:'client',  label:'Client' },
+    hasPair   && { key:'pair',   label:'Pair' },
+    hasBuy    && { key:'buy',    label:'Buy' },
+    hasSell   && { key:'sell',   label:'Sell' },
+    hasVolume && { key:'volume', label:'Notional' },
+    hasTrader && { key:'trader', label:'Trader' },
+    { key:'spread', label:'Spread %' },
+    { key:'prev',   label:'Prev Spread' },
+    { key:'diff',   label:'Δ Change' },
+    { key:'status', label:'Status' },
+  ].filter(Boolean);
+
+  document.getElementById('tableHead').innerHTML = `<tr>${cols.map(c=>
+    `<th onclick="sortBy('${c.key}')">${c.label} <span style="opacity:0.4">${sortCol===c.key?(sortDir===1?'↑':'↓'):'↕'}</span></th>`
+  ).join('')}</tr>`;
+
+  // Find the latest upload id to mark NEW
+  const latestUploadId = snapshots.length ? snapshots[snapshots.length-1].id : null;
+
+  document.getElementById('tableBody').innerHTML = slice.map(r => {
+    const sc = r.status==='ok'?'spread-ok':r.status==='flagged'?'spread-warn':'spread-neutral';
+    const badge = r.status==='flagged' ? `<span class="flag-badge">⚠ LOWER</span>`
+                : r.status==='first'   ? `<span class="first-badge">first trade</span>`
+                :                        `<span class="ok-badge">✓ OK</span>`;
+    const diff = r.diff!==null ? `<span class="${r.diff>=0?'diff-pos':'diff-neg'}">${r.diff>=0?'+':''}${r.diff.toFixed(4)}%</span>` : '—';
+    const prev = r.prev!=null  ? r.prev.toFixed(4)+'%' : '<span style="color:var(--text-dim)">—</span>';
+    const fmt  = v => (v!==null&&v!==''&&!isNaN(v)) ? Number(v).toLocaleString() : (v||'—');
+    const isNew = r._uploadId === latestUploadId;
+    return `<tr class="${r.status==='flagged'?'flagged':''}">
+      <td style="color:var(--text-dim);font-size:11px">${r._uploadDate}${isNew?'<span class="new-badge">NEW</span>':''}</td>
+      ${hasDate   ? `<td>${r.date||'—'}</td>` : ''}
+      <td><strong style="color:var(--text-bright)">${r.client}</strong></td>
+      ${hasPair   ? `<td><span class="pair-pill">${r.pair||'—'}</span></td>` : ''}
+      ${hasBuy    ? `<td>${fmt(r.buy)}</td>`    : ''}
+      ${hasSell   ? `<td>${fmt(r.sell)}</td>`   : ''}
+      ${hasVolume ? `<td>${fmt(r.volume)}</td>` : ''}
+      ${hasTrader ? `<td>${r.trader||'—'}</td>` : ''}
+      <td class="${sc}">${r.spread.toFixed(4)}%</td>
+      <td>${prev}</td><td>${diff}</td><td>${badge}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="99" class="empty">No trades match current filters.</td></tr>`;
+
+  const pag = document.getElementById('pagination');
+  if (pages<=1) { pag.style.display='none'; return; }
+  pag.style.display='flex';
+  pag.innerHTML=`<span>Showing ${(currentPage-1)*PAGE_SIZE+1}–${Math.min(currentPage*PAGE_SIZE,total)} of ${total}</span>
+    <div class="page-btns">
+      <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>← Prev</button>
+      ${Array.from({length:Math.min(pages,8)},(_,i)=>i+1).map(p=>`<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`).join('')}
+      <button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage===pages?'disabled':''}>Next →</button>
+    </div>`;
+}
+
+function goPage(p){currentPage=p;renderPage();}
+function sortBy(col){sortDir=sortCol===col?sortDir*-1:-1;sortCol=col;renderPage();}
+function updateFlagToggle(){document.getElementById('toggleFlagLabel').classList.toggle('active',document.getElementById('filterFlagged').checked);}
+
+// ── History tab ───────────────────────────────────────────────────
+function renderHistory() {
+  const el = document.getElementById('historyContent');
+  if (!snapshots.length) { el.innerHTML=`<div class="empty">No uploads yet.</div>`; return; }
+  el.innerHTML = `<div class="history-grid">${[...snapshots].reverse().map(s=>`
+    <div class="history-card">
+      <h4>${s.date} <button class="del-btn" onclick="deleteSnapshot('${s.id}')" title="Remove this upload">✕</button></h4>
+      <p>
+        Trades uploaded: <strong style="color:var(--text-bright)">${s.count}</strong><br>
+        Flagged: <strong style="color:${s.flagged>0?'var(--accent2)':'var(--ok)'}">${s.flagged}</strong><br>
+        OK: <strong style="color:var(--ok)">${s.count - s.flagged}</strong>
+      </p>
+      <button class="mem-btn view-btn" style="margin-top:10px;font-size:11px" onclick="viewSnapshot('${s.id}')">View trades →</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+function viewSnapshot(id) {
+  document.getElementById('filterUpload').value = id;
+  switchTab('results');
+  renderTable();
+}
+
+function deleteSnapshot(id) {
+  allTrades = allTrades.filter(r => r._uploadId !== id);
+  snapshots = snapshots.filter(s => s.id !== id);
+  save();
+  updateMemoryBanner();
+  updateHeaderStats();
+  buildFiltersFromAll();
+  renderHistory();
+  renderTable();
+}
+
+// ── Export ────────────────────────────────────────────────────────
+function exportFlagged() {
+  const flagged = getFiltered().filter(r => r.status==='flagged');
+  if (!flagged.length) { alert('No flagged trades in current view.'); return; }
+  const rows = flagged.map(r=>({
+    Upload_Date:r._uploadDate, Client:r.client,
+    ...(r.pair   ?{Pair:r.pair}:{}),
+    ...(r.date   ?{Trade_Date:r.date}:{}),
+    ...(r.trader ?{Trader:r.trader}:{}),
+    ...(r.buy!==null?{Buy:r.buy}:{}),
+    ...(r.sell!==null?{Sell:r.sell}:{}),
+    ...(r.volume  ?{Notional:r.volume}:{}),
+    Spread_Pct:r.spread, Prev_Spread_Pct:r.prev??'', Change_Pct:r.diff??'', Flag:'LOWER SPREAD'
+  }));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Flagged Trades');
+  XLSX.writeFile(wb,'flagged_trades.xlsx');
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['upload','results','history'].forEach(t => {
+    document.getElementById('tab-'+t).classList.toggle('active', t===name);
+    document.getElementById('panel-'+t).classList.toggle('active', t===name);
+  });
+  if (name==='history') renderHistory();
+}
+
+// ── Clear ─────────────────────────────────────────────────────────
+function confirmClear() { document.getElementById('modalOverlay').classList.add('show'); }
+function clearAllData() {
+  localStorage.removeItem(STORAGE_TRADES);
+  localStorage.removeItem(STORAGE_SNAPSHOTS);
+  allTrades=[]; snapshots=[];
+  document.getElementById('modalOverlay').classList.remove('show');
+  updateMemoryBanner(); updateHeaderStats();
+  buildFiltersFromAll(); renderTable(); renderHistory();
+  switchTab('upload');
+}
+
+// ── Reset upload UI ───────────────────────────────────────────────
+function resetUpload() {
+  document.getElementById('mapper').style.display='none';
+  document.getElementById('uploadZone').style.display='block';
+  fileInput.value=''; rawData=[];
+}
+
+// ── Sample data ───────────────────────────────────────────────────
+function loadSample() {
+  // Simulate two days of data
+  const day1 = [
+    {Client:'Acme Corp',  Pair:'EURUSD',Date:'2025-01-05',Trader:'J. Smith', Buy:1.0820,Sell:1.0830,Notional:1000000,Spread:'0.0092'},
+    {Client:'BlueSky Ltd',Pair:'GBPUSD',Date:'2025-01-05',Trader:'A. Jones', Buy:1.2640,Sell:1.2655,Notional:500000, Spread:'0.0119'},
+    {Client:'Gamma FX',   Pair:'USDJPY',Date:'2025-01-05',Trader:'J. Smith', Buy:149.10,Sell:149.24,Notional:2000000,Spread:'0.0094'},
+    {Client:'Delta Inc',  Pair:'EURUSD',Date:'2025-01-05',Trader:'A. Jones', Buy:1.0900,Sell:1.0916,Notional:1200000,Spread:'0.0147'},
+  ];
+  const day2 = [
+    {Client:'Acme Corp',  Pair:'EURUSD',Date:'2025-01-06',Trader:'J. Smith', Buy:1.0910,Sell:1.0921,Notional:750000, Spread:'0.0101'}, // ok vs 0.0092
+    {Client:'BlueSky Ltd',Pair:'GBPUSD',Date:'2025-01-06',Trader:'A. Jones', Buy:1.2700,Sell:1.2710,Notional:600000, Spread:'0.0079'}, // flagged vs 0.0119
+    {Client:'Gamma FX',   Pair:'USDJPY',Date:'2025-01-06',Trader:'K. Brown', Buy:149.50,Sell:149.66,Notional:1500000,Spread:'0.0107'}, // ok vs 0.0094
+    {Client:'Delta Inc',  Pair:'EURUSD',Date:'2025-01-06',Trader:'K. Brown', Buy:1.0875,Sell:1.0888,Notional:900000, Spread:'0.0120'}, // flagged vs 0.0147
+  ];
+
+  // Load day 1 silently
+  rawData = day1;
+  columns = Object.keys(day1[0]);
+  mapping = {client:'Client',spread:'Spread',date:'Date',pair:'Pair',buy:'Buy',sell:'Sell',volume:'Notional',trader:'Trader'};
+
+  // Manually process day1 first
+  processAndStoreSilent(day1, 'Sample Day 1');
+
+  // Then process day2 so it cross-checks against day1
+  setTimeout(()=>{
+    processAndStoreSilent(day2, 'Sample Day 2');
+  }, 50);
+}
+
+function processAndStoreSilent(data, label) {
+  rawData = data;
+  const lastKnown = {};
+  allTrades.forEach(r => {
+    const key = r.client+'||'+(r.pair||'__any__');
+    const existing = lastKnown[key];
+    const rDate = parseDate(r.date), exDate = existing ? parseDate(existing.date) : null;
+    if (!existing || !exDate || (rDate && rDate >= exDate)) lastKnown[key] = { spread: r.spread, date: r.date };
+  });
+  const withinUpload = {};
+  const uploadId = Date.now().toString() + Math.random();
+  const uploadDate = label;
+
+  const newTrades = data.map(r => {
+    const row = {
+      client: String(r[mapping.client]||'').trim(),
+      spread: parseFloat(String(r[mapping.spread]||'0').replace(/[%,]/g,'')),
+      date: r[mapping.date]||'', pair: String(r[mapping.pair]||'').trim().toUpperCase(),
+      buy: parseFloat(r[mapping.buy]), sell: parseFloat(r[mapping.sell]),
+      volume: r[mapping.volume], trader: String(r[mapping.trader]||'').trim(),
+    };
+    const key = row.client+'||'+(row.pair||'__any__');
+    const prevEntry = lastKnown[key] !== undefined ? lastKnown[key] : withinUpload[key];
+    let status, diff, prevSpread;
+    if (!prevEntry) { status='first'; diff=null; prevSpread=null; }
+    else {
+      prevSpread = prevEntry.spread; diff = row.spread - prevSpread;
+      const thisDate = parseDate(row.date), prevDate = parseDate(prevEntry.date);
+      if (!thisDate||!prevDate) status = row.spread >= prevSpread ? 'ok' : 'flagged';
+      else if (thisDate > prevDate) status = row.spread >= prevSpread ? 'ok' : 'flagged';
+      else status = 'ok';
+    }
+    const newEntry = { spread: row.spread, date: row.date };
+    withinUpload[key] = newEntry;
+    const ex = lastKnown[key], exD = ex ? parseDate(ex.date) : null, thD = parseDate(row.date);
+    if (!ex || !exD || (thD && thD >= exD)) lastKnown[key] = newEntry;
+    return {...row, prev:prevSpread, status, diff, _uploadId:uploadId, _uploadDate:uploadDate};
+  }).filter(r=>r.client&&!isNaN(r.spread));
+
+  const flagCount = newTrades.filter(r=>r.status==='flagged').length;
+  allTrades = [...allTrades, ...newTrades];
+  snapshots.push({id:uploadId, date:uploadDate, count:newTrades.length, flagged:flagCount});
+  save(); updateMemoryBanner(); updateHeaderStats(); buildFiltersFromAll(); renderTable(); renderHistory();
+  document.getElementById('uploadZone').style.display='none';
+  document.getElementById('mapper').style.display='none';
+  switchTab('results');
+}
+
+// ── Start ─────────────────────────────────────────────────────────
+init();
+
+// ── Register service worker (PWA) ────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
