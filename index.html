@@ -1011,31 +1011,6 @@ function isRecovered(trade) {
 
 // ── Outlook / Microsoft Graph email ──────────────────────────────
 const AZURE_CLIENT_ID_KEY = 'c4u_azure_client_id';
-const MSAL_SCOPE = ['Mail.Send'];
-let msalInstance = null;
-let msalAccount  = null;
-
-function saveClientId() {
-  const val = document.getElementById('azureClientId').value.trim();
-  if (val) localStorage.setItem(AZURE_CLIENT_ID_KEY, val);
-  updateAzureNotice();
-}
-
-function updateAzureNotice() {
-  const id = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  const notice = document.getElementById('azureNotice');
-  const sendBtn = document.getElementById('sendBtn');
-  if (id) {
-    notice.style.display = 'none';
-    sendBtn.disabled = false;
-  } else {
-    notice.style.display = 'block';
-    sendBtn.disabled = true;
-  }
-}
-
-// ── Outlook / Microsoft Graph email ──────────────────────────────
-const AZURE_CLIENT_ID_KEY = 'c4u_azure_client_id';
 const MSAL_SCOPE = ['Mail.Send', 'User.Read'];
 const PENDING_EMAIL_KEY = 'c4u_pending_email';
 let msalInstance = null;
@@ -1185,8 +1160,6 @@ async function doSendEmail(accessToken) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error?.message || 'Send failed — please try again.');
   }
-}
-  });
 }
 
 function openInMailApp() {
