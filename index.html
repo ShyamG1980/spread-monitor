@@ -867,7 +867,6 @@ function processAndStoreSilent(data, label) {
 
 // ── Start ─────────────────────────────────────────────────────────
 init();
-handleRedirectResult();
 
 // ── Register service worker (PWA) ────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -1031,120 +1030,131 @@ function updateAzureNotice() {
   }
 }
 
-function loadMsal(callback) {
-  if (window.msal) { callback(); return; }
+// ── Outlook / Microsoft Graph email ──────────────────────────────
+const AZURE_CLIENT_ID_KEY = 'c4u_azure_client_id';
+const MSAL_SCOPE = ['Mail.Send', 'User.Read'];
+const PENDING_EMAIL_KEY = 'c4u_pending_email';
+let msalInstance = null;
+let msalReady = false;
+
+// Load MSAL immediately at page load
+(function loadMsalEarly() {
   const s = document.createElement('script');
   s.src = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
-  s.onload = callback;
+  s.onload = () => {
+    msalReady = true;
+    initMsal();
+  };
+  s.onerror = () => console.warn('MSAL failed to load');
   document.head.appendChild(s);
-}
+})();
 
-function getMsalInstance() {
+function initMsal() {
   const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  if (!clientId) return null;
-  if (!msalInstance) {
+  if (!clientId || !msalReady || !window.msal) return;
+  try {
     msalInstance = new msal.PublicClientApplication({
       auth: {
         clientId,
         authority: 'https://login.microsoftonline.com/common',
         redirectUri: 'https://shyamg1980.github.io/spread-monitor/',
+        navigateToLoginRequestUrl: true,
       },
-      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true }
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+      system: { allowNativeBroker: false }
     });
-  }
-  return msalInstance;
+    // Handle redirect on every page load
+    msalInstance.initialize().then(() => {
+      msalInstance.handleRedirectPromise().then(result => {
+        if (result && result.accessToken) {
+          const pending = localStorage.getItem(PENDING_EMAIL_KEY);
+          if (pending) {
+            const p = JSON.parse(pending);
+            localStorage.removeItem(PENDING_EMAIL_KEY);
+            openEmailModal(true);
+            document.getElementById('emailTo').value      = p.to || '';
+            document.getElementById('emailSubject').value = p.subject || '';
+            document.getElementById('emailBody').value    = p.body || '';
+            doSendEmail(result.accessToken);
+          }
+        }
+      }).catch(e => console.warn('Redirect error:', e));
+    });
+  } catch(e) { console.warn('MSAL init error:', e); }
 }
 
-// Save pending email to localStorage before redirect, restore after
-const PENDING_EMAIL_KEY = 'c4u_pending_email';
+function saveClientId() {
+  const val = document.getElementById('azureClientId').value.trim();
+  if (val) {
+    localStorage.setItem(AZURE_CLIENT_ID_KEY, val);
+    msalInstance = null; // reset so it reinitialises with new ID
+    if (msalReady) initMsal();
+  }
+  updateAzureNotice();
+}
+
+function updateAzureNotice() {
+  const id = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+  const notice = document.getElementById('azureNotice');
+  const sendBtn = document.getElementById('sendBtn');
+  if (id) {
+    notice.style.display = 'none';
+    sendBtn.disabled = false;
+  } else {
+    notice.style.display = 'block';
+    sendBtn.disabled = true;
+  }
+}
 
 function savePendingEmail() {
-  const pending = {
+  localStorage.setItem(PENDING_EMAIL_KEY, JSON.stringify({
     to:      document.getElementById('emailTo').value.trim(),
     subject: document.getElementById('emailSubject').value.trim(),
     body:    document.getElementById('emailBody').value.trim(),
-  };
-  localStorage.setItem(PENDING_EMAIL_KEY, JSON.stringify(pending));
-}
-
-function restorePendingEmail() {
-  const raw = localStorage.getItem(PENDING_EMAIL_KEY);
-  if (!raw) return false;
-  try {
-    const p = JSON.parse(raw);
-    document.getElementById('emailTo').value      = p.to || '';
-    document.getElementById('emailSubject').value = p.subject || '';
-    document.getElementById('emailBody').value    = p.body || '';
-    return true;
-  } catch(e) { return false; }
-}
-
-async function handleRedirectResult() {
-  const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  if (!clientId) return;
-  loadMsal(async () => {
-    try {
-      const pca = getMsalInstance();
-      await pca.initialize();
-      const result = await pca.handleRedirectPromise();
-      if (result && result.accessToken) {
-        // We have a token — check if there's a pending email to send
-        const hasPending = localStorage.getItem(PENDING_EMAIL_KEY);
-        if (hasPending) {
-          // Restore the email modal and send
-          openEmailModal(true);
-          restorePendingEmail();
-          localStorage.removeItem(PENDING_EMAIL_KEY);
-          await doSendEmail(result.accessToken);
-        }
-      }
-    } catch(e) {
-      console.warn('Redirect handle error:', e);
-    }
-  });
+  }));
 }
 
 async function sendViaOutlook() {
   const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
   if (!clientId) { alert('Please enter your Azure Client ID first.'); return; }
+  if (!msalReady || !window.msal) { alert('Auth library still loading, please try again in a moment.'); return; }
 
-  const to      = document.getElementById('emailTo').value.trim();
-  const subject = document.getElementById('emailSubject').value.trim();
-  const body    = document.getElementById('emailBody').value.trim();
+  const to = document.getElementById('emailTo').value.trim();
   if (!to) { alert('Please enter a recipient email address.'); return; }
 
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
   btn.querySelector('span').textContent = 'Signing in...';
 
-  loadMsal(async () => {
-    try {
-      const pca = getMsalInstance();
-      await pca.initialize();
+  try {
+    if (!msalInstance) initMsal();
+    await msalInstance.initialize();
 
-      // Try silent first
-      const accounts = pca.getAllAccounts();
-      if (accounts.length > 0) {
-        try {
-          const tokenResponse = await pca.acquireTokenSilent({ scopes: MSAL_SCOPE, account: accounts[0] });
-          btn.querySelector('span').textContent = 'Sending...';
-          await doSendEmail(tokenResponse.accessToken);
-          return;
-        } catch(e) {
-          // Silent failed, fall through to redirect
-        }
-      }
-
-      // Save email content and redirect to Microsoft login
-      savePendingEmail();
-      await pca.acquireTokenRedirect({ scopes: MSAL_SCOPE });
-
-    } catch(e) {
-      alert('Could not sign in: ' + e.message);
-      btn.disabled = false;
-      btn.querySelector('span').textContent = 'Send via Outlook';
+    // Try silent first
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      try {
+        const result = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPE, account: accounts[0] });
+        btn.querySelector('span').textContent = 'Sending...';
+        await doSendEmail(result.accessToken);
+        btn.disabled = false;
+        btn.querySelector('span').textContent = 'Send via Outlook';
+        return;
+      } catch(e) { /* fall through to redirect */ }
     }
-  });
+
+    // Save email and redirect to Microsoft login
+    savePendingEmail();
+    await msalInstance.acquireTokenRedirect({
+      scopes: MSAL_SCOPE,
+      prompt: 'select_account'
+    });
+
+  } catch(e) {
+    alert('Sign-in error: ' + (e.message || e));
+    btn.disabled = false;
+    btn.querySelector('span').textContent = 'Send via Outlook';
+  }
 }
 
 async function doSendEmail(accessToken) {
@@ -1152,30 +1162,28 @@ async function doSendEmail(accessToken) {
   const subject = document.getElementById('emailSubject').value.trim();
   const body    = document.getElementById('emailBody').value.trim();
 
-  const emailPayload = {
-    message: {
-      subject,
-      body: { contentType: 'Text', content: body },
-      toRecipients: [{ emailAddress: { address: to } }]
-    },
-    saveToSentItems: true
-  };
-
   const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(emailPayload)
+    body: JSON.stringify({
+      message: {
+        subject,
+        body: { contentType: 'Text', content: body },
+        toRecipients: [{ emailAddress: { address: to } }]
+      },
+      saveToSentItems: true
+    })
   });
 
   if (res.ok || res.status === 202) {
     closeEmailModal();
     alert('✓ Email sent successfully via Outlook!');
   } else {
-    const err = await res.json();
-    throw new Error(err.error?.message || 'Send failed');
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Send failed — please try again.');
   }
 }
   });

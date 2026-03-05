@@ -1,4 +1,4 @@
-const CACHE = 'c4u-spread-monitor-v6';
+const CACHE = 'c4u-spread-monitor-v7';
 const ASSETS = [
   './',
   './index.html',
