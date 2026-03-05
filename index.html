@@ -867,6 +867,10 @@ function processAndStoreSilent(data, label) {
 
 // ── Start ─────────────────────────────────────────────────────────
 init();
+// Only handle Microsoft redirect if we were mid-login flow
+if (localStorage.getItem('c4u_pending_email') && localStorage.getItem('c4u_azure_client_id')) {
+  handleRedirectIfNeeded();
+}
 
 // ── Register service worker (PWA) ────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -1037,22 +1041,21 @@ const PENDING_EMAIL_KEY = 'c4u_pending_email';
 let msalInstance = null;
 let msalReady = false;
 
-// Load MSAL immediately at page load
-(function loadMsalEarly() {
-  const s = document.createElement('script');
-  s.src = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
-  s.onload = () => {
-    msalReady = true;
-    initMsal();
-  };
-  s.onerror = () => console.warn('MSAL failed to load');
-  document.head.appendChild(s);
-})();
+function loadMsal() {
+  return new Promise((resolve, reject) => {
+    if (window.msal) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
+    s.onload = () => { msalReady = true; resolve(); };
+    s.onerror = () => reject(new Error('Could not load auth library. Check your internet connection.'));
+    document.head.appendChild(s);
+  });
+}
 
-function initMsal() {
+function getMsalInstance() {
   const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  if (!clientId || !msalReady || !window.msal) return;
-  try {
+  if (!clientId) return null;
+  if (!msalInstance) {
     msalInstance = new msal.PublicClientApplication({
       auth: {
         clientId,
@@ -1063,47 +1066,45 @@ function initMsal() {
       cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
       system: { allowNativeBroker: false }
     });
-    // Handle redirect on every page load
-    msalInstance.initialize().then(() => {
-      msalInstance.handleRedirectPromise().then(result => {
-        if (result && result.accessToken) {
-          const pending = localStorage.getItem(PENDING_EMAIL_KEY);
-          if (pending) {
-            const p = JSON.parse(pending);
-            localStorage.removeItem(PENDING_EMAIL_KEY);
-            openEmailModal(true);
-            document.getElementById('emailTo').value      = p.to || '';
-            document.getElementById('emailSubject').value = p.subject || '';
-            document.getElementById('emailBody').value    = p.body || '';
-            doSendEmail(result.accessToken);
-          }
-        }
-      }).catch(e => console.warn('Redirect error:', e));
-    });
-  } catch(e) { console.warn('MSAL init error:', e); }
+  }
+  return msalInstance;
+}
+
+// Check for redirect result only if we have a pending email (i.e. we were in a login flow)
+async function handleRedirectIfNeeded() {
+  const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+  const pending  = localStorage.getItem(PENDING_EMAIL_KEY);
+  if (!clientId || !pending) return;
+  try {
+    await loadMsal();
+    const pca = getMsalInstance();
+    await pca.initialize();
+    const result = await pca.handleRedirectPromise();
+    if (result && result.accessToken) {
+      const p = JSON.parse(pending);
+      localStorage.removeItem(PENDING_EMAIL_KEY);
+      openEmailModal(true);
+      document.getElementById('emailTo').value      = p.to || '';
+      document.getElementById('emailSubject').value = p.subject || '';
+      document.getElementById('emailBody').value    = p.body || '';
+      await doSendEmail(result.accessToken);
+    }
+  } catch(e) {
+    console.warn('Redirect handling error:', e);
+    localStorage.removeItem(PENDING_EMAIL_KEY);
+  }
 }
 
 function saveClientId() {
   const val = document.getElementById('azureClientId').value.trim();
-  if (val) {
-    localStorage.setItem(AZURE_CLIENT_ID_KEY, val);
-    msalInstance = null; // reset so it reinitialises with new ID
-    if (msalReady) initMsal();
-  }
+  if (val) { localStorage.setItem(AZURE_CLIENT_ID_KEY, val); msalInstance = null; }
   updateAzureNotice();
 }
 
 function updateAzureNotice() {
   const id = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  const notice = document.getElementById('azureNotice');
-  const sendBtn = document.getElementById('sendBtn');
-  if (id) {
-    notice.style.display = 'none';
-    sendBtn.disabled = false;
-  } else {
-    notice.style.display = 'block';
-    sendBtn.disabled = true;
-  }
+  document.getElementById('azureNotice').style.display = id ? 'none' : 'block';
+  document.getElementById('sendBtn').disabled = !id;
 }
 
 function savePendingEmail() {
@@ -1117,24 +1118,26 @@ function savePendingEmail() {
 async function sendViaOutlook() {
   const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
   if (!clientId) { alert('Please enter your Azure Client ID first.'); return; }
-  if (!msalReady || !window.msal) { alert('Auth library still loading, please try again in a moment.'); return; }
 
   const to = document.getElementById('emailTo').value.trim();
   if (!to) { alert('Please enter a recipient email address.'); return; }
 
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
-  btn.querySelector('span').textContent = 'Signing in...';
+  btn.querySelector('span').textContent = 'Loading...';
 
   try {
-    if (!msalInstance) initMsal();
-    await msalInstance.initialize();
+    await loadMsal();
+    const pca = getMsalInstance();
+    await pca.initialize();
+
+    btn.querySelector('span').textContent = 'Signing in...';
 
     // Try silent first
-    const accounts = msalInstance.getAllAccounts();
+    const accounts = pca.getAllAccounts();
     if (accounts.length > 0) {
       try {
-        const result = await msalInstance.acquireTokenSilent({ scopes: MSAL_SCOPE, account: accounts[0] });
+        const result = await pca.acquireTokenSilent({ scopes: MSAL_SCOPE, account: accounts[0] });
         btn.querySelector('span').textContent = 'Sending...';
         await doSendEmail(result.accessToken);
         btn.disabled = false;
@@ -1143,12 +1146,9 @@ async function sendViaOutlook() {
       } catch(e) { /* fall through to redirect */ }
     }
 
-    // Save email and redirect to Microsoft login
+    // Redirect to Microsoft login
     savePendingEmail();
-    await msalInstance.acquireTokenRedirect({
-      scopes: MSAL_SCOPE,
-      prompt: 'select_account'
-    });
+    await pca.acquireTokenRedirect({ scopes: MSAL_SCOPE, prompt: 'select_account' });
 
   } catch(e) {
     alert('Sign-in error: ' + (e.message || e));
