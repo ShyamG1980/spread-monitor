@@ -107,6 +107,30 @@
   .first-badge{background:rgba(0,212,255,0.08);color:var(--accent);border:1px solid rgba(0,212,255,0.2);padding:2px 7px;border-radius:3px;font-size:10px;font-style:italic;}
   .pair-pill{background:var(--surface2);color:var(--accent);border:1px solid var(--border);padding:2px 8px;border-radius:3px;font-size:11px;}
   .new-badge{background:rgba(255,184,48,0.12);color:#ffb830;border:1px solid rgba(255,184,48,0.3);padding:2px 6px;border-radius:3px;font-size:9px;margin-left:5px;vertical-align:middle;}
+  .recovered-badge{background:rgba(0,229,160,0.12);color:#00e5a0;border:1px solid rgba(0,229,160,0.35);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600;}
+  .notif-bar{display:none;align-items:center;justify-content:space-between;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.2);border-radius:6px;padding:10px 16px;margin-bottom:14px;font-family:var(--mono);font-size:12px;color:var(--text-dim);}
+  .notif-bar.show{display:flex;}
+  .notif-enable{background:var(--accent);color:var(--bg);border:none;padding:5px 14px;border-radius:4px;font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;}
+  .notif-dismiss{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:0 4px;margin-left:8px;}
+
+  /* Email modal */
+  .email-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center;padding:16px;}
+  .email-modal.show{display:flex;}
+  .email-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:100%;max-width:580px;max-height:90vh;overflow-y:auto;}
+  .email-box h3{font-family:var(--mono);font-size:14px;color:var(--accent);margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;}
+  .email-field{margin-bottom:14px;}
+  .email-field label{display:block;font-size:11px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
+  .email-field input,.email-field textarea{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text-bright);padding:9px 12px;border-radius:5px;font-family:var(--sans);font-size:13px;outline:none;resize:vertical;}
+  .email-field input:focus,.email-field textarea:focus{border-color:var(--accent);}
+  .email-field textarea{min-height:220px;line-height:1.6;}
+  .email-actions{display:flex;gap:10px;margin-top:18px;}
+  .send-btn{background:#0078d4;color:#fff;border:none;padding:10px 22px;border-radius:5px;font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;}
+  .send-btn:hover{opacity:0.88;}
+  .send-btn:disabled{opacity:0.4;cursor:default;}
+  .outlook-btn{background:transparent;color:var(--ok);border:1px solid rgba(0,229,160,0.3);padding:10px 18px;border-radius:5px;font-family:var(--mono);font-size:12px;cursor:pointer;}
+  .outlook-btn:hover{background:rgba(0,229,160,0.08);}
+  .azure-notice{background:rgba(0,120,212,0.08);border:1px solid rgba(0,120,212,0.25);border-radius:6px;padding:12px 14px;font-size:12px;color:var(--text-dim);font-family:var(--mono);margin-bottom:16px;line-height:1.6;}
+  .azure-notice a{color:#0078d4;}
 
   .pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);font-family:var(--mono);font-size:12px;color:var(--text-dim);}
   .page-btns{display:flex;gap:5px;}
@@ -156,6 +180,15 @@
     <div class="memory-actions">
       <button class="mem-btn view-btn" onclick="switchTab('history')">View History</button>
       <button class="mem-btn" onclick="confirmClear()">Clear All Data</button>
+    </div>
+  </div>
+
+  <!-- Notification prompt -->
+  <div class="notif-bar" id="notifBar">
+    <span>🔔 Enable Monday 8AM reminders to review recovered spreads?</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="notif-enable" onclick="enableNotifications()">Enable</button>
+      <button class="notif-dismiss" onclick="dismissNotifBar()" title="Dismiss">✕</button>
     </div>
   </div>
 
@@ -212,6 +245,7 @@
         Flagged only
       </label>
       <button class="export-btn" onclick="exportFlagged()">↓ Export Flagged</button>
+      <button class="export-btn" id="emailBtn" onclick="openEmailModal()" style="color:#0078d4;border-color:rgba(0,120,212,0.3);display:none">✉ Email Broker</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -228,7 +262,58 @@
   </div>
 </div>
 
-<!-- Confirm modal -->
+<!-- Email modal -->
+<div class="email-modal" id="emailModal">
+  <div class="email-box">
+    <h3>✉ Email Broker — Flagged Spreads
+      <button onclick="closeEmailModal()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px">✕</button>
+    </h3>
+    <div class="azure-notice" id="azureNotice">
+      <strong style="color:#0078d4">Outlook not connected.</strong> Enter your Azure Client ID below to enable automatic sending, or use <strong>Open in Outlook</strong> to send manually.<br>
+      <a href="#" onclick="showAzureHelp();return false">How do I get a Client ID? →</a>
+    </div>
+    <div class="email-field">
+      <label>Azure App Client ID (one-time setup)</label>
+      <input type="text" id="azureClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" oninput="saveClientId()">
+    </div>
+    <div class="email-field">
+      <label>To — Broker Email Address</label>
+      <input type="email" id="emailTo" placeholder="broker@example.com">
+    </div>
+    <div class="email-field">
+      <label>Subject</label>
+      <input type="text" id="emailSubject">
+    </div>
+    <div class="email-field">
+      <label>Message</label>
+      <textarea id="emailBody"></textarea>
+    </div>
+    <div class="email-actions">
+      <button class="send-btn" id="sendBtn" onclick="sendViaOutlook()">
+        <span>Send via Outlook</span>
+      </button>
+      <button class="outlook-btn" onclick="openInMailApp()">Open in Mail App</button>
+    </div>
+  </div>
+</div>
+
+<!-- Azure help modal -->
+<div class="modal-overlay" id="azureHelpModal">
+  <div class="modal" style="max-width:520px;text-align:left">
+    <h3 style="color:#0078d4;margin-bottom:14px">Setting up Outlook sending</h3>
+    <p style="font-size:13px;color:var(--text-dim);line-height:1.8;margin-bottom:16px">
+      1. Go to <strong style="color:var(--text)">portal.azure.com</strong> and sign in with your Office 365 account<br>
+      2. Search for <strong style="color:var(--text)">App registrations</strong> → click <strong style="color:var(--text)">New registration</strong><br>
+      3. Name it <strong style="color:var(--text)">C4U Spread Monitor</strong>, leave defaults, click <strong style="color:var(--text)">Register</strong><br>
+      4. Copy the <strong style="color:var(--text)">Application (client) ID</strong> — paste it into the app<br>
+      5. Go to <strong style="color:var(--text)">Authentication</strong> → Add platform → Single-page application<br>
+      6. Set Redirect URI to <strong style="color:var(--text)">https://shyamg1980.github.io/spread-monitor</strong><br>
+      7. Under <strong style="color:var(--text)">API permissions</strong> → Add → Microsoft Graph → Delegated → <strong style="color:var(--text)">Mail.Send</strong><br>
+      8. Click <strong style="color:var(--text)">Grant admin consent</strong>
+    </p>
+    <button class="btn" onclick="document.getElementById('azureHelpModal').classList.remove('show')">Got it</button>
+  </div>
+</div>
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h3>⚠ Clear All Data?</h3>
@@ -481,6 +566,16 @@ function processAndStore() {
   switchTab('results');
   renderTable();
   renderHistory();
+  updateEmailBtn();
+
+  // If there are new flags, prompt to email
+  if (flagCount > 0) {
+    setTimeout(() => {
+      if (confirm(`⚠ ${flagCount} flagged spread${flagCount>1?'s':''} found. Open email to broker now?`)) {
+        openEmailModal();
+      }
+    }, 400);
+  }
 }
 
 // ── Filters ───────────────────────────────────────────────────────
@@ -572,9 +667,12 @@ function renderPage() {
 
   document.getElementById('tableBody').innerHTML = slice.map(r => {
     const sc = r.status==='ok'?'spread-ok':r.status==='flagged'?'spread-warn':'spread-neutral';
-    const badge = r.status==='flagged' ? `<span class="flag-badge">⚠ LOWER</span>`
-                : r.status==='first'   ? `<span class="first-badge">first trade</span>`
-                :                        `<span class="ok-badge">✓ OK</span>`;
+    const badge = r.status==='flagged'
+      ? (isRecovered(r)
+          ? `<span class="flag-badge">⚠ LOWER</span> <span class="recovered-badge">✓ RECOVERED</span>`
+          : `<span class="flag-badge">⚠ LOWER</span>`)
+      : r.status==='first' ? `<span class="first-badge">first trade</span>`
+      :                       `<span class="ok-badge">✓ OK</span>`;
     const diff = r.diff!==null ? `<span class="${r.diff>=0?'diff-pos':'diff-neg'}">${r.diff>=0?'+':''}${r.diff.toFixed(4)}%</span>` : '—';
     const prev = r.prev!=null  ? r.prev.toFixed(4)+'%' : '<span style="color:var(--text-dim)">—</span>';
     const fmt  = v => (v!==null&&v!==''&&!isNaN(v)) ? Number(v).toLocaleString() : (v||'—');
@@ -776,6 +874,315 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
+
+// ── Notifications ────────────────────────────────────────────────
+const NOTIF_KEY = 'c4u_notif_enabled';
+const NOTIF_DISMISSED = 'c4u_notif_dismissed';
+
+function initNotifications() {
+  // Show prompt if not yet decided and browser supports notifications
+  if (!('Notification' in window)) return;
+  const enabled = localStorage.getItem(NOTIF_KEY);
+  const dismissed = localStorage.getItem(NOTIF_DISMISSED);
+  if (!enabled && !dismissed) {
+    document.getElementById('notifBar').classList.add('show');
+  }
+  if (enabled === 'true') scheduleWeeklyCheck();
+}
+
+function enableNotifications() {
+  Notification.requestPermission().then(perm => {
+    if (perm === 'granted') {
+      localStorage.setItem(NOTIF_KEY, 'true');
+      localStorage.removeItem(NOTIF_DISMISSED);
+      document.getElementById('notifBar').classList.remove('show');
+      scheduleWeeklyCheck();
+      // Confirm to user
+      new Notification('C4U Spread Monitor', {
+        body: 'Monday 8AM reminders are enabled! You\'ll be notified to check recovered spreads.',
+        icon: './icons/icon-192.png'
+      });
+    } else {
+      alert('Notifications were blocked. You can enable them in your browser settings.');
+    }
+  });
+}
+
+function dismissNotifBar() {
+  localStorage.setItem(NOTIF_DISMISSED, 'true');
+  document.getElementById('notifBar').classList.remove('show');
+}
+
+function scheduleWeeklyCheck() {
+  // Calculate ms until next Monday 8:00 AM
+  function msUntilNextMonday8am() {
+    const now = new Date();
+    const next = new Date(now);
+    // Day 1 = Monday
+    const day = now.getDay(); // 0=Sun,1=Mon,...,6=Sat
+    const daysUntilMonday = day === 1 ? 7 : (8 - day) % 7 || 7;
+    next.setDate(now.getDate() + daysUntilMonday);
+    next.setHours(8, 0, 0, 0);
+    // If today is Monday and it's before 8am, fire today
+    if (day === 1 && now.getHours() < 8) {
+      next.setDate(now.getDate());
+      next.setHours(8, 0, 0, 0);
+    }
+    return next.getTime() - now.getTime();
+  }
+
+  function fireNotification() {
+    if (Notification.permission !== 'granted') return;
+    const recovered = getRecoveredSpreads();
+    const flagged   = allTrades.filter(r => r.status === 'flagged');
+    let body = '';
+    if (recovered.length > 0) {
+      body = `${recovered.length} spread${recovered.length > 1 ? 's have' : ' has'} recovered. ${flagged.length} still flagged. Open the app to review.`;
+    } else if (flagged.length > 0) {
+      body = `${flagged.length} spread${flagged.length > 1 ? 's are' : ' is'} still below target. Open the app to review.`;
+    } else {
+      body = 'All spreads are looking good this week!';
+    }
+    new Notification('C4U Spread Monitor — Weekly Review', {
+      body,
+      icon: './icons/icon-192.png',
+      tag: 'weekly-review'
+    });
+    // Schedule next Monday
+    setTimeout(fireNotification, msUntilNextMonday8am());
+  }
+
+  const delay = msUntilNextMonday8am();
+  setTimeout(fireNotification, delay);
+}
+
+// ── Recovered spreads logic ───────────────────────────────────────
+// A spread is "recovered" if:
+// 1. It was flagged at some point
+// 2. A later trade for the same client+pair has a spread >= the original target (prev spread)
+function getRecoveredSpreads() {
+  // Find all client+pair combos that were ever flagged
+  const flaggedKeys = {};
+  allTrades.forEach(r => {
+    if (r.status === 'flagged') {
+      const key = r.client + '||' + (r.pair || '__any__');
+      // Store the target spread (prev = what we should be hitting)
+      if (!flaggedKeys[key] || r.prev > flaggedKeys[key].target) {
+        flaggedKeys[key] = { client: r.client, pair: r.pair, target: r.prev, flaggedDate: r.date };
+      }
+    }
+  });
+
+  // For each flagged key, check if the most recent trade has recovered
+  const recovered = [];
+  Object.entries(flaggedKeys).forEach(([key, info]) => {
+    // Get all trades for this key, sorted newest first
+    const trades = allTrades
+      .filter(r => (r.client + '||' + (r.pair || '__any__')) === key)
+      .sort((a, b) => {
+        const da = parseDate(a.date), db = parseDate(b.date);
+        return (da && db) ? db - da : 0;
+      });
+    const latest = trades[0];
+    if (latest && latest.spread >= info.target) {
+      recovered.push({ ...info, currentSpread: latest.spread, latestDate: latest.date });
+    }
+  });
+  return recovered;
+}
+
+// ── Inject recovered badges into table ───────────────────────────
+function isRecovered(trade) {
+  if (trade.status !== 'flagged') return false;
+  const key = trade.client + '||' + (trade.pair || '__any__');
+  // Find any later trade for same key with spread >= trade.prev
+  return allTrades.some(r => {
+    if ((r.client + '||' + (r.pair || '__any__')) !== key) return false;
+    if (r === trade) return false;
+    const rd = parseDate(r.date), td = parseDate(trade.date);
+    if (rd && td && rd <= td) return false;
+    return r.spread >= (trade.prev || 0);
+  });
+}
+
+// ── Outlook / Microsoft Graph email ──────────────────────────────
+const AZURE_CLIENT_ID_KEY = 'c4u_azure_client_id';
+const MSAL_SCOPE = ['Mail.Send'];
+let msalInstance = null;
+let msalAccount  = null;
+
+function saveClientId() {
+  const val = document.getElementById('azureClientId').value.trim();
+  if (val) localStorage.setItem(AZURE_CLIENT_ID_KEY, val);
+  updateAzureNotice();
+}
+
+function updateAzureNotice() {
+  const id = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+  const notice = document.getElementById('azureNotice');
+  const sendBtn = document.getElementById('sendBtn');
+  if (id) {
+    notice.style.display = 'none';
+    sendBtn.disabled = false;
+  } else {
+    notice.style.display = 'block';
+    sendBtn.disabled = true;
+  }
+}
+
+function loadMsal(callback) {
+  if (window.msal) { callback(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
+  s.onload = callback;
+  document.head.appendChild(s);
+}
+
+function getMsalInstance() {
+  const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+  if (!clientId) return null;
+  if (!msalInstance) {
+    msalInstance = new msal.PublicClientApplication({
+      auth: {
+        clientId,
+        authority: 'https://login.microsoftonline.com/common',
+        redirectUri: window.location.origin + window.location.pathname,
+      },
+      cache: { cacheLocation: 'localStorage' }
+    });
+  }
+  return msalInstance;
+}
+
+async function sendViaOutlook() {
+  const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+  if (!clientId) { alert('Please enter your Azure Client ID first.'); return; }
+
+  const to      = document.getElementById('emailTo').value.trim();
+  const subject = document.getElementById('emailSubject').value.trim();
+  const body    = document.getElementById('emailBody').value.trim();
+  if (!to) { alert('Please enter a recipient email address.'); return; }
+
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = 'Signing in...';
+
+  loadMsal(async () => {
+    try {
+      const pca = getMsalInstance();
+      await pca.initialize();
+
+      // Try silent first, then popup
+      let tokenResponse;
+      const accounts = pca.getAllAccounts();
+      if (accounts.length > 0) {
+        try {
+          tokenResponse = await pca.acquireTokenSilent({ scopes: MSAL_SCOPE, account: accounts[0] });
+        } catch(e) {
+          tokenResponse = await pca.acquireTokenPopup({ scopes: MSAL_SCOPE });
+        }
+      } else {
+        tokenResponse = await pca.acquireTokenPopup({ scopes: MSAL_SCOPE });
+      }
+
+      btn.querySelector('span').textContent = 'Sending...';
+
+      const emailPayload = {
+        message: {
+          subject,
+          body: { contentType: 'Text', content: body },
+          toRecipients: [{ emailAddress: { address: to } }]
+        },
+        saveToSentItems: true
+      };
+
+      const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenResponse.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(emailPayload)
+      });
+
+      if (res.ok || res.status === 202) {
+        closeEmailModal();
+        alert('✓ Email sent successfully via Outlook!');
+      } else {
+        const err = await res.json();
+        throw new Error(err.error?.message || 'Send failed');
+      }
+    } catch(e) {
+      alert('Could not send email: ' + e.message + '\n\nTry "Open in Mail App" instead.');
+    } finally {
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Send via Outlook';
+    }
+  });
+}
+
+function openInMailApp() {
+  const to      = encodeURIComponent(document.getElementById('emailTo').value.trim());
+  const subject = encodeURIComponent(document.getElementById('emailSubject').value.trim());
+  const body    = encodeURIComponent(document.getElementById('emailBody').value.trim());
+  window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+}
+
+function buildFlaggedEmailBody(trades) {
+  const lines = trades.map(r =>
+    `  • ${r.client}${r.pair?' — '+r.pair:''} — ${r.date||'N/A'} — Spread: ${r.spread.toFixed(4)}% (expected ${r.prev!=null?r.prev.toFixed(4)+'%':'N/A'})`
+  ).join('\n');
+
+  return `Hi,
+
+Hope you're well!
+
+I've been doing my usual spread checks and noticed a few trades recently where the spread came in a little lower than expected. I've listed them below:
+
+${lines}
+
+Nothing to worry about at this stage, but given there are a few of them I just wanted to bring it to your attention and ask if you could keep an eye on it going forward. It would be great to understand if there's a common reason behind these so we can make sure it doesn't become a pattern.
+
+Always appreciate you looking after us — just want to make sure we're all staying on top of it together!
+
+Thanks so much,
+[Your Name]`;
+}
+
+function openEmailModal() {
+  const flagged = allTrades.filter(r => r.status === 'flagged');
+  if (!flagged.length) { alert('No flagged trades to email about.'); return; }
+
+  // Restore saved client ID
+  const savedId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+  if (savedId) document.getElementById('azureClientId').value = savedId;
+
+  const count = flagged.length;
+  document.getElementById('emailTo').value = '';
+  document.getElementById('emailSubject').value = `Spread Check — ${count} Trade${count>1?'s':''} to Flag`;
+  document.getElementById('emailBody').value = buildFlaggedEmailBody(flagged);
+  updateAzureNotice();
+  document.getElementById('emailModal').classList.add('show');
+}
+
+function closeEmailModal() {
+  document.getElementById('emailModal').classList.remove('show');
+}
+
+function showAzureHelp() {
+  document.getElementById('azureHelpModal').classList.add('show');
+}
+
+// Show email button whenever there are flagged trades
+function updateEmailBtn() {
+  const btn = document.getElementById('emailBtn');
+  const flagged = allTrades.filter(r => r.status === 'flagged');
+  btn.style.display = flagged.length > 0 ? 'inline-block' : 'none';
+}
+
+// Start notification system
+initNotifications();
+updateEmailBtn();
 </script>
 </body>
 </html>
