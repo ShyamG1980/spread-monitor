@@ -1015,6 +1015,7 @@ const OAUTH_VERIFIER_KEY  = 'c4u_oauth_verifier';
 const OAUTH_TOKEN_KEY     = 'c4u_oauth_token';
 const REDIRECT_URI        = 'https://shyamg1980.github.io/spread-monitor/';
 const SCOPES              = 'Mail.Send User.Read offline_access';
+const TENANT_ID           = '13e74be5-557f-46d1-a150-a6c7c4edf69d';
 
 // ── PKCE helpers ─────────────────────────────────────────────────
 function generateRandom(len) {
@@ -1098,7 +1099,7 @@ async function handleOAuthRedirect() {
       scope:         SCOPES,
     });
 
-    const resp = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    const resp = await fetch(`https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body
@@ -1183,7 +1184,7 @@ async function sendViaOutlook() {
     localStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
     savePendingEmail();
 
-    const authUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?' +
+    const authUrl = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?` +
       new URLSearchParams({
         client_id:             clientId,
         response_type:         'code',
