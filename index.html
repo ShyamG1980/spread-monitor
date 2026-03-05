@@ -867,10 +867,8 @@ function processAndStoreSilent(data, label) {
 
 // ── Start ─────────────────────────────────────────────────────────
 init();
-// Only handle Microsoft redirect if we were mid-login flow
-if (localStorage.getItem('c4u_pending_email') && localStorage.getItem('c4u_azure_client_id')) {
-  handleRedirectIfNeeded();
-}
+// Handle Microsoft OAuth redirect if returning from login
+handleOAuthRedirect();
 
 // ── Register service worker (PWA) ────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -1009,74 +1007,124 @@ function isRecovered(trade) {
   });
 }
 
-// ── Outlook / Microsoft Graph email ──────────────────────────────
+// ── Outlook / Microsoft Graph email (native OAuth, no MSAL) ──────
 const AZURE_CLIENT_ID_KEY = 'c4u_azure_client_id';
-const MSAL_SCOPE = ['Mail.Send', 'User.Read'];
-const PENDING_EMAIL_KEY = 'c4u_pending_email';
-let msalInstance = null;
-let msalReady = false;
+const PENDING_EMAIL_KEY   = 'c4u_pending_email';
+const OAUTH_STATE_KEY     = 'c4u_oauth_state';
+const OAUTH_VERIFIER_KEY  = 'c4u_oauth_verifier';
+const OAUTH_TOKEN_KEY     = 'c4u_oauth_token';
+const REDIRECT_URI        = 'https://shyamg1980.github.io/spread-monitor/';
+const SCOPES              = 'Mail.Send User.Read offline_access';
 
-function loadMsal() {
-  return new Promise((resolve, reject) => {
-    if (window.msal) { resolve(); return; }
-    const tryLoad = (src, fallback) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = () => { msalReady = true; resolve(); };
-      s.onerror = () => fallback ? tryLoad(fallback, null) : reject(new Error('Could not load auth library.'));
-      document.head.appendChild(s);
-    };
-    // Try local copy first, fall back to Microsoft CDN v2.35.0
-    tryLoad('./msal-browser.min.js', 'https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js');
+// ── PKCE helpers ─────────────────────────────────────────────────
+function generateRandom(len) {
+  const arr = new Uint8Array(len);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function sha256(plain) {
+  const enc = new TextEncoder().encode(plain);
+  const hash = await crypto.subtle.digest('SHA-256', enc);
+  return btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+// ── Token management ──────────────────────────────────────────────
+function getStoredToken() {
+  try {
+    const t = JSON.parse(localStorage.getItem(OAUTH_TOKEN_KEY) || 'null');
+    if (!t) return null;
+    if (Date.now() > t.expires_at - 60000) { localStorage.removeItem(OAUTH_TOKEN_KEY); return null; }
+    return t;
+  } catch(e) { return null; }
+}
+
+function clearOAuthState() {
+  localStorage.removeItem(OAUTH_STATE_KEY);
+  localStorage.removeItem(OAUTH_VERIFIER_KEY);
+  // Clear any stuck MSAL state too
+  Object.keys(localStorage).forEach(k => {
+    if (k.startsWith('msal.') || k.includes('login.windows') || k.includes('interaction.status')) {
+      localStorage.removeItem(k);
+    }
   });
 }
 
-function getMsalInstance() {
-  const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  if (!clientId) return null;
-  if (!msalInstance) {
-    msalInstance = new msal.PublicClientApplication({
-      auth: {
-        clientId,
-        authority: 'https://login.microsoftonline.com/common',
-        redirectUri: 'https://shyamg1980.github.io/spread-monitor/',
-        navigateToLoginRequestUrl: true,
-      },
-      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
-      system: { allowNativeBroker: false }
-    });
-  }
-  return msalInstance;
-}
+// ── Handle OAuth redirect on page load ───────────────────────────
+async function handleOAuthRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const code  = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
 
-// Check for redirect result only if we have a pending email (i.e. we were in a login flow)
-async function handleRedirectIfNeeded() {
-  const clientId = localStorage.getItem(AZURE_CLIENT_ID_KEY);
-  const pending  = localStorage.getItem(PENDING_EMAIL_KEY);
-  if (!clientId || !pending) return;
+  if (!code && !error) return;
+
+  // Clean URL immediately
+  window.history.replaceState({}, '', window.location.pathname);
+
+  if (error) {
+    clearOAuthState();
+    alert('Sign-in was cancelled or failed: ' + (params.get('error_description') || error));
+    return;
+  }
+
+  const savedState    = localStorage.getItem(OAUTH_STATE_KEY);
+  const codeVerifier  = localStorage.getItem(OAUTH_VERIFIER_KEY);
+  const clientId      = localStorage.getItem(AZURE_CLIENT_ID_KEY);
+
+  if (!savedState || state !== savedState || !codeVerifier || !clientId) {
+    clearOAuthState();
+    alert('Sign-in state mismatch. Please try again.');
+    return;
+  }
+
+  clearOAuthState();
+
+  // Exchange code for token
   try {
-    await loadMsal();
-    const pca = getMsalInstance();
-    await pca.initialize();
-    const result = await pca.handleRedirectPromise();
-    if (result && result.accessToken) {
+    const resp = await fetch(`https://login.microsoftonline.com/common/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     clientId,
+        grant_type:    'authorization_code',
+        code,
+        redirect_uri:  REDIRECT_URI,
+        code_verifier: codeVerifier,
+        scope:         SCOPES,
+      })
+    });
+
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error_description || data.error);
+
+    localStorage.setItem(OAUTH_TOKEN_KEY, JSON.stringify({
+      access_token: data.access_token,
+      expires_at:   Date.now() + (data.expires_in * 1000)
+    }));
+
+    // Restore pending email and send
+    const pending = localStorage.getItem(PENDING_EMAIL_KEY);
+    if (pending) {
       const p = JSON.parse(pending);
       localStorage.removeItem(PENDING_EMAIL_KEY);
       openEmailModal(true);
       document.getElementById('emailTo').value      = p.to || '';
       document.getElementById('emailSubject').value = p.subject || '';
       document.getElementById('emailBody').value    = p.body || '';
-      await doSendEmail(result.accessToken);
+      await doSendEmail(data.access_token);
     }
   } catch(e) {
-    console.warn('Redirect handling error:', e);
-    localStorage.removeItem(PENDING_EMAIL_KEY);
+    alert('Could not complete sign-in: ' + e.message);
   }
 }
 
 function saveClientId() {
   const val = document.getElementById('azureClientId').value.trim();
-  if (val) { localStorage.setItem(AZURE_CLIENT_ID_KEY, val); msalInstance = null; }
+  if (val) {
+    localStorage.setItem(AZURE_CLIENT_ID_KEY, val);
+    localStorage.removeItem(OAUTH_TOKEN_KEY); // clear old token for new client
+  }
   updateAzureNotice();
 }
 
@@ -1103,34 +1151,44 @@ async function sendViaOutlook() {
 
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
-  btn.querySelector('span').textContent = 'Loading...';
+  btn.querySelector('span').textContent = 'Signing in...';
 
   try {
-    await loadMsal();
-    const pca = getMsalInstance();
-    await pca.initialize();
-
-    btn.querySelector('span').textContent = 'Signing in...';
-
-    // Try silent first
-    const accounts = pca.getAllAccounts();
-    if (accounts.length > 0) {
-      try {
-        const result = await pca.acquireTokenSilent({ scopes: MSAL_SCOPE, account: accounts[0] });
-        btn.querySelector('span').textContent = 'Sending...';
-        await doSendEmail(result.accessToken);
-        btn.disabled = false;
-        btn.querySelector('span').textContent = 'Send via Outlook';
-        return;
-      } catch(e) { /* fall through to redirect */ }
+    // Try stored token first
+    const stored = getStoredToken();
+    if (stored) {
+      btn.querySelector('span').textContent = 'Sending...';
+      await doSendEmail(stored.access_token);
+      btn.disabled = false;
+      btn.querySelector('span').textContent = 'Send via Outlook';
+      return;
     }
 
-    // Redirect to Microsoft login
+    // No token — start OAuth PKCE flow
+    const state        = generateRandom(32);
+    const verifier     = generateRandom(64);
+    const challenge    = await sha256(verifier);
+
+    localStorage.setItem(OAUTH_STATE_KEY,    state);
+    localStorage.setItem(OAUTH_VERIFIER_KEY, verifier);
     savePendingEmail();
-    await pca.acquireTokenRedirect({ scopes: MSAL_SCOPE, prompt: 'select_account' });
+
+    const authUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?' +
+      new URLSearchParams({
+        client_id:             clientId,
+        response_type:         'code',
+        redirect_uri:          REDIRECT_URI,
+        scope:                 SCOPES,
+        state,
+        code_challenge:        challenge,
+        code_challenge_method: 'S256',
+        prompt:                'select_account',
+      });
+
+    window.location.href = authUrl;
 
   } catch(e) {
-    alert('Sign-in error: ' + (e.message || e));
+    alert('Error: ' + (e.message || e));
     btn.disabled = false;
     btn.querySelector('span').textContent = 'Send via Outlook';
   }
@@ -1145,7 +1203,7 @@ async function doSendEmail(accessToken) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
+      'Content-Type':  'application/json'
     },
     body: JSON.stringify({
       message: {
@@ -1162,6 +1220,8 @@ async function doSendEmail(accessToken) {
     alert('✓ Email sent successfully via Outlook!');
   } else {
     const err = await res.json().catch(() => ({}));
+    // Token may be stale — clear it so next attempt re-authenticates
+    localStorage.removeItem(OAUTH_TOKEN_KEY);
     throw new Error(err.error?.message || 'Send failed — please try again.');
   }
 }
