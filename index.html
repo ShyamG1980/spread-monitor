@@ -1064,7 +1064,7 @@ async function handleOAuthRedirect() {
 
   if (error) {
     clearOAuthState();
-    alert('Sign-in was cancelled or failed: ' + (params.get('error_description') || error));
+    alert('Sign-in failed: ' + (params.get('error_description') || error));
     return;
   }
 
@@ -1072,38 +1072,41 @@ async function handleOAuthRedirect() {
   const codeVerifier  = localStorage.getItem(OAUTH_VERIFIER_KEY);
   const clientId      = localStorage.getItem(AZURE_CLIENT_ID_KEY);
 
-  if (!savedState || state !== savedState || !codeVerifier || !clientId) {
+  if (!savedState || state !== savedState) {
     clearOAuthState();
-    alert('Sign-in state mismatch. Please try again.');
+    alert('Sign-in state mismatch. Please try again.\n\nSaved: ' + savedState + '\nReceived: ' + state);
     return;
   }
 
+  if (!codeVerifier) { clearOAuthState(); alert('Missing code verifier. Please try again.'); return; }
+  if (!clientId)     { clearOAuthState(); alert('Missing Client ID. Please try again.'); return; }
+
   clearOAuthState();
 
-  // Exchange code for token
   try {
-    const resp = await fetch(`https://login.microsoftonline.com/common/oauth2/v2.0/token`, {
+    const body = new URLSearchParams({
+      client_id:     clientId,
+      grant_type:    'authorization_code',
+      code,
+      redirect_uri:  REDIRECT_URI,
+      code_verifier: codeVerifier,
+      scope:         SCOPES,
+    });
+
+    const resp = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id:     clientId,
-        grant_type:    'authorization_code',
-        code,
-        redirect_uri:  REDIRECT_URI,
-        code_verifier: codeVerifier,
-        scope:         SCOPES,
-      })
+      body
     });
 
     const data = await resp.json();
-    if (data.error) throw new Error(data.error_description || data.error);
+    if (data.error) throw new Error(data.error + ': ' + (data.error_description || ''));
 
     localStorage.setItem(OAUTH_TOKEN_KEY, JSON.stringify({
       access_token: data.access_token,
       expires_at:   Date.now() + (data.expires_in * 1000)
     }));
 
-    // Restore pending email and send
     const pending = localStorage.getItem(PENDING_EMAIL_KEY);
     if (pending) {
       const p = JSON.parse(pending);
@@ -1113,9 +1116,11 @@ async function handleOAuthRedirect() {
       document.getElementById('emailSubject').value = p.subject || '';
       document.getElementById('emailBody').value    = p.body || '';
       await doSendEmail(data.access_token);
+    } else {
+      alert('Signed in successfully but no pending email found. Please try sending again.');
     }
   } catch(e) {
-    alert('Could not complete sign-in: ' + e.message);
+    alert('Token exchange failed: ' + e.message);
   }
 }
 
