@@ -1057,6 +1057,11 @@ async function handleOAuthRedirect() {
   const state = params.get('state');
   const error = params.get('error');
 
+  // Debug — remove once working
+  if (window.location.search) {
+    alert('DEBUG URL params: ' + window.location.search.substring(0, 100));
+  }
+
   if (!code && !error) return;
 
   // Clean URL immediately
