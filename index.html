@@ -993,7 +993,27 @@ function buildFlaggedEmailBody(trades) {
   const lines = trades.map(r =>
     `  • ${r.client}${r.pair?' — '+r.pair:''} — ${r.date||'N/A'} — Spread: ${r.spread.toFixed(4)}% (expected ${r.prev!=null?r.prev.toFixed(4)+'%':'N/A'})`
   ).join('\n');
-  return `Hi,\n\nHope you're well!\n\nI've been doing my usual spread checks and noticed a few trades recently where the spread came in a little lower than expected. I've listed them below:\n\n${lines}\n\nNothing to worry about at this stage, but given there are a few of them I just wanted to bring it to your attention and ask if you could keep an eye on it going forward. It would be great to understand if there's a common reason behind these so we can make sure it doesn't become a pattern.\n\nAlways appreciate you looking after us — just want to make sure we're all staying on top of it together!\n\nThanks so much,\n[Your Name]`;
+  return `Hi,
+
+Hope you're well!
+
+I've been doing my usual spread checks and noticed a few trades recently where the spread came in a little lower than expected. I've listed them below:
+
+${lines}
+
+Nothing to worry about at this stage, but given there are a few of them I just wanted to bring it to your attention and ask if you could keep an eye on it going forward. It would be great to understand if there's a common reason behind these so we can make sure it doesn't become a pattern.
+
+Always appreciate you looking after us — just want to make sure we're all staying on top of it together!
+
+Thanks so much,
+
+Warm Regards,
+
+Shyam S. Gokani Head of Trading | www.currencies4you.com
+
+T: +44 (0) 1322 319550 M: +44 (0) 7534 285661 E: shyam.gokani@currencies4you.com A: Currencies 4 You, Regus House, Victory Way, Admirals Park, Crossway Dartford, DA2 6QD
+
+This email and any attachments may be confidential and/or legally privileged. If you have received this email and you are not a named addressee, please inform the sender by return email and delete both emails. If you are not a named addressee you must not use, disclose, distribute, copy, print or rely on this email. Any views or opinions presented are solely those of the author. Any statements made, or intentions expressed in this communication may not necessarily reflect the view of Currencies 4 You Ltd. No content herein will bind Currencies 4 You Ltd or any associated company unless confirmed by a formal contract from Currencies 4 You Ltd. Any figures or amounts given in this email are quotations only and are subject to change. Currencies 4 You Ltd makes no representation or warranty as to the absence of viruses in this e-mail or any attachments. Currencies 4 You is a company registered in England and Wales (registered no. 06866898) Currencies 4 You's Payment and Foreign Currency Exchange Services are provided by Equals Connect Limited which is part of the Equals Group plc. Equals Connect is authorised by the Financial Conduct Authority to provide payment services. (Financial Services Register No: 671508).`;
 }
 
 function openEmailModal(restoring = false) {
