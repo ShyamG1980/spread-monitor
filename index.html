@@ -136,6 +136,19 @@
   .trade-select-info{flex:1;}
   .trade-select-client{font-family:var(--mono);font-size:13px;color:var(--text-bright);font-weight:500;}
   .trade-select-detail{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:3px;}
+  .report-broker-block{margin-bottom:22px;}
+  .report-broker-name{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:6px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+  .report-broker-badge{font-size:11px;background:rgba(239,68,68,0.12);color:#ef4444;border-radius:4px;padding:2px 8px;}
+  .report-trade-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:8px 10px;border-radius:6px;margin-bottom:4px;font-family:var(--mono);font-size:11px;}
+  .report-trade-row:nth-child(odd){background:var(--surface2);}
+  .report-trade-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;}
+  .report-trade-val{color:var(--text-bright);font-weight:500;}
+  .report-trade-cost{color:#ef4444;font-weight:600;}
+  .report-summary{background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:7px;padding:12px 14px;margin-top:16px;}
+  .report-summary-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;margin-bottom:4px;color:var(--text-dim);}
+  .report-summary-row span:last-child{color:var(--text-bright);font-weight:600;}
+  .report-empty{font-family:var(--mono);font-size:13px;color:var(--text-dim);text-align:center;padding:30px;border:1px dashed var(--border);border-radius:6px;}
+  .report-header-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:4px 10px;font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
   .azure-notice{background:rgba(0,120,212,0.08);border:1px solid rgba(0,120,212,0.25);border-radius:6px;padding:12px 14px;font-size:12px;color:var(--text-dim);font-family:var(--mono);margin-bottom:16px;line-height:1.6;}
   .azure-notice a{color:#0078d4;}
 
@@ -253,6 +266,7 @@
       </label>
       <button class="export-btn" onclick="exportFlagged()">↓ Export Flagged</button>
       <button class="export-btn" id="emailBtn" onclick="openEmailModal()" style="color:#0078d4;border-color:rgba(0,120,212,0.3);display:none">✉ Email Broker</button>
+      <button class="export-btn" onclick="openMonthlyReport()" style="color:#9333ea;border-color:rgba(147,51,234,0.3)">📊 Monthly Report</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -312,6 +326,35 @@
     <p style="font-size:11px;color:var(--text-dim);margin-top:10px;font-family:var(--mono)">Tap the button to open Outlook with the email ready to send.</p>
   </div>
 </div>
+<!-- Monthly Report Modal -->
+<div class="email-modal" id="reportModal">
+  <div class="email-box" style="max-width:640px">
+    <h3>📊 Monthly Flagged Trades Report
+      <button onclick="closeMonthlyReport()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px">✕</button>
+    </h3>
+
+    <!-- Month selector -->
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:11px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px">Month</label>
+        <select id="reportMonth" onchange="renderMonthlyReport()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-bright);padding:6px 10px;border-radius:5px;font-family:var(--mono);font-size:13px;outline:none">
+          <option value="0">January</option><option value="1">February</option><option value="2">March</option>
+          <option value="3">April</option><option value="4">May</option><option value="5">June</option>
+          <option value="6">July</option><option value="7">August</option><option value="8">September</option>
+          <option value="9">October</option><option value="10">November</option><option value="11">December</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="font-size:11px;color:var(--text-dim);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px">Year</label>
+        <select id="reportYear" onchange="renderMonthlyReport()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-bright);padding:6px 10px;border-radius:5px;font-family:var(--mono);font-size:13px;outline:none" id="reportYear"></select>
+      </div>
+      <button onclick="exportMonthlyReport()" style="margin-left:auto;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);padding:6px 14px;border-radius:5px;font-family:var(--mono);font-size:11px;cursor:pointer">↓ Export CSV</button>
+    </div>
+
+    <div id="reportContent"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal">
     <h3>⚠ Clear All Data?</h3>
@@ -1113,6 +1156,173 @@ function updateEmailBtn() {
   btn.style.display = flagged.length > 0 ? 'inline-block' : 'none';
 }
 
+
+
+// ── Monthly Report ────────────────────────────────────────────────
+function openMonthlyReport() {
+  const now = new Date();
+  // Populate year dropdown from trade date range
+  const yearSel = document.getElementById('reportYear');
+  yearSel.innerHTML = '';
+  const years = new Set();
+  allTrades.forEach(t => {
+    const d = parseDate(t.date);
+    if (d) years.add(d.getFullYear());
+  });
+  if (!years.size) years.add(now.getFullYear());
+  const sortedYears = [...years].sort((a,b) => b-a);
+  sortedYears.forEach(y => {
+    const o = document.createElement('option');
+    o.value = y; o.textContent = y;
+    yearSel.appendChild(o);
+  });
+  // Default to previous month
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  document.getElementById('reportMonth').value = prevMonth.getMonth();
+  yearSel.value = prevMonth.getFullYear();
+  renderMonthlyReport();
+  document.getElementById('reportModal').classList.add('show');
+}
+
+function closeMonthlyReport() {
+  document.getElementById('reportModal').classList.remove('show');
+}
+
+function renderMonthlyReport() {
+  const month = parseInt(document.getElementById('reportMonth').value);
+  const year  = parseInt(document.getElementById('reportYear').value);
+  const container = document.getElementById('reportContent');
+
+  // Filter flagged trades in this month
+  const flagged = allTrades.filter(t => {
+    if (t.status !== 'flagged') return false;
+    const d = parseDate(t.date);
+    return d && d.getMonth() === month && d.getFullYear() === year;
+  });
+
+  if (!flagged.length) {
+    container.innerHTML = '<div class="report-empty">No flagged trades found for this month.</div>';
+    return;
+  }
+
+  // Group by broker (trader field). Trades with no broker go under "Unknown"
+  const byBroker = {};
+  flagged.forEach(t => {
+    const broker = (t.trader || '').trim() || 'Unknown';
+    if (!byBroker[broker]) byBroker[broker] = [];
+    byBroker[broker].push(t);
+  });
+
+  // Build cost per currency per broker
+  let html = '';
+  const grandTotals = {}; // currency -> total cost
+
+  const brokerNames = Object.keys(byBroker).sort();
+  brokerNames.forEach(broker => {
+    const trades = byBroker[broker];
+    const brokerCosts = {}; // currency -> total
+
+    let tradesHtml = '';
+    tradesHtml += '<div class="report-header-row"><span>Client / Pair</span><span>Date</span><span>Shortfall</span><span>Cost</span></div>';
+
+    trades.forEach(t => {
+      const shortfall = (t.prev != null) ? (t.prev - t.spread) : null;
+      let costStr = '—';
+      let costVal = null;
+
+      // Parse notional
+      const rawVol = String(t.volume || '').replace(/[,\s]/g, '');
+      const notional = parseFloat(rawVol);
+
+      // Detect currency from pair (first 3 chars = base currency)
+      let ccy = '';
+      if (t.pair && t.pair.length >= 3) ccy = t.pair.substring(0, 3).toUpperCase();
+
+      if (shortfall !== null && !isNaN(notional) && notional > 0) {
+        costVal = (shortfall / 100) * notional;
+        costStr = (ccy ? ccy + ' ' : '') + costVal.toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+        if (ccy) {
+          brokerCosts[ccy] = (brokerCosts[ccy] || 0) + costVal;
+          grandTotals[ccy] = (grandTotals[ccy] || 0) + costVal;
+        }
+      }
+
+      const shortfallStr = shortfall !== null ? '-' + shortfall.toFixed(4) + '%' : '—';
+      const clientPair = t.client + (t.pair ? ' / ' + t.pair : '');
+
+      tradesHtml += `<div class="report-trade-row">
+        <div><div class="report-trade-label">Client</div><div class="report-trade-val" style="font-size:10px">${clientPair}</div></div>
+        <div><div class="report-trade-label">Date</div><div class="report-trade-val">${t.date || '—'}</div></div>
+        <div><div class="report-trade-label">Shortfall</div><div class="report-trade-cost">${shortfallStr}</div></div>
+        <div><div class="report-trade-label">Est. Cost</div><div class="report-trade-cost">${costStr}</div></div>
+      </div>`;
+    });
+
+    // Broker cost summary
+    const costSummary = Object.entries(brokerCosts)
+      .map(([c,v]) => c + ' ' + v.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}))
+      .join(' · ') || 'No notional data';
+
+    html += `<div class="report-broker-block">
+      <div class="report-broker-name">
+        <span>🏦 ${broker}</span>
+        <span class="report-broker-badge">${trades.length} flagged trade${trades.length>1?'s':''}</span>
+      </div>
+      ${tradesHtml}
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:6px;text-align:right">
+        Broker total: <span style="color:#ef4444;font-weight:600">${costSummary}</span>
+      </div>
+    </div>`;
+  });
+
+  // Grand total
+  const grandStr = Object.entries(grandTotals)
+    .map(([c,v]) => c + ' ' + v.toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}))
+    .join('<br>') || 'No notional data';
+
+  const monthName = new Date(year, month, 1).toLocaleString('en-GB',{month:'long',year:'numeric'});
+  html += `<div class="report-summary">
+    <div class="report-summary-row"><span>Period</span><span>${monthName}</span></div>
+    <div class="report-summary-row"><span>Total flagged trades</span><span>${flagged.length}</span></div>
+    <div class="report-summary-row"><span>Brokers involved</span><span>${brokerNames.length}</span></div>
+    <div class="report-summary-row"><span>Estimated total cost</span><span style="color:#ef4444">${grandStr || '—'}</span></div>
+  </div>`;
+
+  container.innerHTML = html;
+}
+
+function exportMonthlyReport() {
+  const month = parseInt(document.getElementById('reportMonth').value);
+  const year  = parseInt(document.getElementById('reportYear').value);
+  const monthName = new Date(year, month, 1).toLocaleString('en-GB',{month:'long',year:'numeric'});
+
+  const flagged = allTrades.filter(t => {
+    if (t.status !== 'flagged') return false;
+    const d = parseDate(t.date);
+    return d && d.getMonth() === month && d.getFullYear() === year;
+  });
+
+  const rows = [['Broker','Client','Pair','Date','Spread','Expected Spread','Shortfall (%)','Notional','Currency','Est. Cost']];
+  flagged.forEach(t => {
+    const broker = (t.trader || '').trim() || 'Unknown';
+    const shortfall = t.prev != null ? (t.prev - t.spread) : '';
+    const rawVol = String(t.volume || '').replace(/[,\s]/g, '');
+    const notional = parseFloat(rawVol);
+    let ccy = t.pair && t.pair.length >= 3 ? t.pair.substring(0,3).toUpperCase() : '';
+    let cost = '';
+    if (shortfall !== '' && !isNaN(notional) && notional > 0) {
+      cost = ((shortfall / 100) * notional).toFixed(2);
+    }
+    rows.push([broker, t.client, t.pair||'', t.date||'', t.spread, t.prev!=null?t.prev:'', shortfall!==''?shortfall.toFixed(4):'', isNaN(notional)?'':notional, ccy, cost]);
+  });
+
+  const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `C4U_Monthly_Report_${monthName.replace(' ','_')}.csv`;
+  a.click();
+}
 
 // Start notification system
 initNotifications();
