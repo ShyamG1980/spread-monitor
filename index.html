@@ -129,6 +129,13 @@
   .send-btn:disabled{opacity:0.4;cursor:default;}
   .outlook-btn{background:transparent;color:var(--ok);border:1px solid rgba(0,229,160,0.3);padding:10px 18px;border-radius:5px;font-family:var(--mono);font-size:12px;cursor:pointer;}
   .outlook-btn:hover{background:rgba(0,229,160,0.08);}
+  .trade-select-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;cursor:pointer;transition:background 0.12s;}
+  .trade-select-item:hover{background:var(--surface2);}
+  .trade-select-item.checked{background:rgba(0,120,212,0.08);border-color:rgba(0,120,212,0.4);}
+  .trade-select-item input[type=checkbox]{width:16px;height:16px;margin-top:2px;flex-shrink:0;cursor:pointer;accent-color:#0078d4;}
+  .trade-select-info{flex:1;}
+  .trade-select-client{font-family:var(--mono);font-size:13px;color:var(--text-bright);font-weight:500;}
+  .trade-select-detail{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:3px;}
   .azure-notice{background:rgba(0,120,212,0.08);border:1px solid rgba(0,120,212,0.25);border-radius:6px;padding:12px 14px;font-size:12px;color:var(--text-dim);font-family:var(--mono);margin-bottom:16px;line-height:1.6;}
   .azure-notice a{color:#0078d4;}
 
@@ -262,6 +269,22 @@
   </div>
 </div>
 
+<!-- Trade selection modal -->
+<div class="email-modal" id="selectModal">
+  <div class="email-box">
+    <h3>✉ Select Trades to Email
+      <button onclick="closeSelectModal()" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:18px">✕</button>
+    </h3>
+    <p style="font-size:12px;color:var(--text-dim);font-family:var(--mono);margin-bottom:14px">Tick the trades you want to include, then tap Continue.</p>
+    <div id="tradeSelectList" style="margin-bottom:16px;max-height:340px;overflow-y:auto;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button onclick="selectAllTrades()" style="background:none;border:1px solid var(--border);color:var(--text-dim);padding:6px 12px;border-radius:5px;font-family:var(--mono);font-size:11px;cursor:pointer">Select All</button>
+      <button onclick="selectNoneTrades()" style="background:none;border:1px solid var(--border);color:var(--text-dim);padding:6px 12px;border-radius:5px;font-family:var(--mono);font-size:11px;cursor:pointer">Clear</button>
+    </div>
+    <button class="send-btn" onclick="proceedToEmail()" style="width:100%;justify-content:center">Continue to Email →</button>
+  </div>
+</div>
+
 <!-- Email modal -->
 <div class="email-modal" id="emailModal">
   <div class="email-box">
@@ -281,6 +304,7 @@
       <textarea id="emailBody"></textarea>
     </div>
     <div class="email-actions">
+      <button class="send-btn" style="background:var(--surface2);color:var(--text-dim);border:1px solid var(--border)" onclick="closeEmailModal();openSelectModal()">← Back</button>
       <button class="send-btn" id="sendBtn" onclick="openInMailApp()">
         <span>✉ Open in Outlook</span>
       </button>
@@ -980,7 +1004,6 @@ function isRecovered(trade) {
 }
 
 // ── Email broker ─────────────────────────────────────────────────
-const PENDING_EMAIL_KEY = 'c4u_pending_email';
 
 function openInMailApp() {
   const to      = encodeURIComponent(document.getElementById('emailTo').value.trim());
@@ -1016,20 +1039,69 @@ T: +44 (0) 1322 319550 M: +44 (0) 7534 285661 E: shyam.gokani@currencies4you.com
 This email and any attachments may be confidential and/or legally privileged. If you have received this email and you are not a named addressee, please inform the sender by return email and delete both emails. If you are not a named addressee you must not use, disclose, distribute, copy, print or rely on this email. Any views or opinions presented are solely those of the author. Any statements made, or intentions expressed in this communication may not necessarily reflect the view of Currencies 4 You Ltd. No content herein will bind Currencies 4 You Ltd or any associated company unless confirmed by a formal contract from Currencies 4 You Ltd. Any figures or amounts given in this email are quotations only and are subject to change. Currencies 4 You Ltd makes no representation or warranty as to the absence of viruses in this e-mail or any attachments. Currencies 4 You is a company registered in England and Wales (registered no. 06866898) Currencies 4 You's Payment and Foreign Currency Exchange Services are provided by Equals Connect Limited which is part of the Equals Group plc. Equals Connect is authorised by the Financial Conduct Authority to provide payment services. (Financial Services Register No: 671508).`;
 }
 
-function openEmailModal(restoring = false) {
+// ── Trade selection modal ─────────────────────────────────────────
+function openEmailModal() {
+  openSelectModal();
+}
+
+function openSelectModal() {
   const flagged = allTrades.filter(r => r.status === 'flagged');
-  if (!flagged.length && !restoring) { alert('No flagged trades to email about.'); return; }
-  if (!restoring) {
-    const count = flagged.length;
-    document.getElementById('emailTo').value      = localStorage.getItem('c4u_last_broker_email') || '';
-    document.getElementById('emailSubject').value = `Spread Check — ${count} Trade${count>1?'s':''} to Flag`;
-    document.getElementById('emailBody').value    = buildFlaggedEmailBody(flagged);
-  }
+  if (!flagged.length) { alert('No flagged trades to email about.'); return; }
+
+  const list = document.getElementById('tradeSelectList');
+  list.innerHTML = flagged.map((r, i) => `
+    <div class="trade-select-item checked" id="tsi-${i}" onclick="toggleTrade(${i}, this)">
+      <input type="checkbox" checked id="tsc-${i}" onclick="event.stopPropagation();toggleTrade(${i},document.getElementById('tsi-${i}'))">
+      <div class="trade-select-info">
+        <div class="trade-select-client">${r.client}${r.pair?' — '+r.pair:''}</div>
+        <div class="trade-select-detail">${r.date||'N/A'} · Spread: ${r.spread.toFixed(4)}% (expected ${r.prev!=null?r.prev.toFixed(4)+'%':'N/A'})</div>
+      </div>
+    </div>`
+  ).join('');
+
+  document.getElementById('selectModal').classList.add('show');
+}
+
+function toggleTrade(i, el) {
+  const cb = document.getElementById('tsc-'+i);
+  cb.checked = !cb.checked;
+  el.classList.toggle('checked', cb.checked);
+}
+
+function selectAllTrades() {
+  document.querySelectorAll('#tradeSelectList .trade-select-item').forEach((el, i) => {
+    document.getElementById('tsc-'+i).checked = true;
+    el.classList.add('checked');
+  });
+}
+
+function selectNoneTrades() {
+  document.querySelectorAll('#tradeSelectList .trade-select-item').forEach((el, i) => {
+    document.getElementById('tsc-'+i).checked = false;
+    el.classList.remove('checked');
+  });
+}
+
+function closeSelectModal() {
+  document.getElementById('selectModal').classList.remove('show');
+}
+
+function proceedToEmail() {
+  const flagged = allTrades.filter(r => r.status === 'flagged');
+  const selected = flagged.filter((r, i) => {
+    const cb = document.getElementById('tsc-'+i);
+    return cb && cb.checked;
+  });
+  if (!selected.length) { alert('Please select at least one trade.'); return; }
+  closeSelectModal();
+  const count = selected.length;
+  document.getElementById('emailTo').value      = localStorage.getItem('c4u_last_broker_email') || '';
+  document.getElementById('emailSubject').value = `Spread Check — ${count} Trade${count>1?'s':''} to Flag`;
+  document.getElementById('emailBody').value    = buildFlaggedEmailBody(selected);
   document.getElementById('emailModal').classList.add('show');
 }
 
 function closeEmailModal() {
-  // Save broker email for next time
   const to = document.getElementById('emailTo').value.trim();
   if (to) localStorage.setItem('c4u_last_broker_email', to);
   document.getElementById('emailModal').classList.remove('show');
