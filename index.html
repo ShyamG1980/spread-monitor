@@ -148,6 +148,7 @@
   .report-summary-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;margin-bottom:4px;color:var(--text-dim);}
   .report-summary-row span:last-child{color:var(--text-bright);font-weight:600;}
   .report-empty{font-family:var(--mono);font-size:13px;color:var(--text-dim);text-align:center;padding:30px;border:1px dashed var(--border);border-radius:6px;}
+  .cost-short{color:#ef4444;font-weight:600;} .cost-earned{color:var(--text-bright);} .cost-expected{color:var(--text-dim);}
   .report-header-row{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:4px 10px;font-family:var(--mono);font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;}
   .azure-notice{background:rgba(0,120,212,0.08);border:1px solid rgba(0,120,212,0.25);border-radius:6px;padding:12px 14px;font-size:12px;color:var(--text-dim);font-family:var(--mono);margin-bottom:16px;line-height:1.6;}
   .azure-notice a{color:#0078d4;}
@@ -562,11 +563,11 @@ function processAndStore() {
       if (!thisDate || !prevDate) {
         // No date info available — fall back to spread-only comparison
         status = r.spread >= prevSpread ? 'ok' : 'flagged';
-      } else if (thisDate > prevDate) {
-        // This trade is strictly newer — apply the spread check
+      } else if (thisDate >= prevDate) {
+        // Same date or newer — apply the spread check
         status = r.spread >= prevSpread ? 'ok' : 'flagged';
       } else {
-        // Same date or older — do not flag, just mark as ok
+        // Strictly older than previous — do not flag
         status = 'ok';
       }
     }
@@ -617,6 +618,31 @@ function processAndStore() {
       }
     }, 400);
   }
+}
+
+
+// ── Cost calculation helper ───────────────────────────────────────
+function calcCostCell(r, type) {
+  const rawVol = String(r.volume || '').replace(/[,\s]/g, '');
+  const notional = parseFloat(rawVol);
+  if (isNaN(notional) || notional <= 0 || r.prev == null) return '<span style="color:var(--text-dim)">—</span>';
+
+  const ccy = (r.pair && r.pair.length >= 3) ? r.pair.substring(0,3).toUpperCase() : '';
+  const prefix = ccy ? ccy + ' ' : '';
+
+  const earned   = (r.spread / 100) * notional;
+  const expected = (r.prev   / 100) * notional;
+  const diff     = earned - expected; // negative = shortfall
+
+  const fmt = v => prefix + Math.abs(v).toLocaleString('en-GB', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  if (type === 'earned')   return `<span style="color:var(--text-bright)">${fmt(earned)}</span>`;
+  if (type === 'expected') return `<span style="color:var(--text-dim)">${fmt(expected)}</span>`;
+  if (type === 'diff') {
+    if (r.status !== 'flagged') return '<span style="color:var(--text-dim)">—</span>';
+    return `<span style="color:#ef4444;font-weight:600">${fmt(diff)} short</span>`;
+  }
+  return '—';
 }
 
 // ── Filters ───────────────────────────────────────────────────────
@@ -684,6 +710,8 @@ function renderPage() {
   const hasTrader = allTrades.some(r=>r.trader);
   const hasDate   = allTrades.some(r=>r.date);
 
+  const hasCost = allTrades.some(r => r.status==='flagged' && r.prev!=null && r.volume!=='');
+
   const cols = [
     { key:'_uploadDate', label:'Upload' },
     hasDate   && { key:'date',   label:'Trade Date' },
@@ -696,6 +724,9 @@ function renderPage() {
     { key:'spread', label:'Spread %' },
     { key:'prev',   label:'Prev Spread' },
     { key:'diff',   label:'Δ Change' },
+    hasCost && { key:'_earned',   label:'Earned' },
+    hasCost && { key:'_expected', label:'Expected' },
+    hasCost && { key:'_costdiff', label:'Difference' },
     { key:'status', label:'Status' },
   ].filter(Boolean);
 
@@ -728,7 +759,11 @@ function renderPage() {
       ${hasVolume ? `<td>${fmt(r.volume)}</td>` : ''}
       ${hasTrader ? `<td>${r.trader||'—'}</td>` : ''}
       <td class="${sc}">${r.spread.toFixed(4)}%</td>
-      <td>${prev}</td><td>${diff}</td><td>${badge}</td>
+      <td>${prev}</td><td>${diff}</td>
+      ${hasCost ? `<td>${calcCostCell(r,'earned')}</td>` : ''}
+      ${hasCost ? `<td>${calcCostCell(r,'expected')}</td>` : ''}
+      ${hasCost ? `<td>${calcCostCell(r,'diff')}</td>` : ''}
+      <td>${badge}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="99" class="empty">No trades match current filters.</td></tr>`;
 
