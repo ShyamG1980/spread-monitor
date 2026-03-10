@@ -579,6 +579,11 @@ function processAndStore() {
       status = 'first';
       diff = null;
       prevSpread = null;
+    } else if (r.spread === 0) {
+      // Zero spread = internal trade — never flag
+      status = 'ok';
+      diff = null;
+      prevSpread = prevEntry.spread;
     } else {
       prevSpread = prevEntry.spread;
       diff = r.spread - prevSpread;
