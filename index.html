@@ -496,6 +496,31 @@ function applyMapping() {
 // ── Process & store ───────────────────────────────────────────────
 function parseDate(val) {
   if (!val) return null;
+  const s = String(val).trim();
+
+  // DD/MM/YYYY or DD-MM-YYYY (British format — most common in C4U data)
+  let m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (m) {
+    const d = new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+    if (!isNaN(d)) return d;
+  }
+
+  // DD/MM/YY
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2})$/);
+  if (m) {
+    const yr = parseInt(m[3]) + (parseInt(m[3]) < 50 ? 2000 : 1900);
+    const d = new Date(yr, parseInt(m[2])-1, parseInt(m[1]));
+    if (!isNaN(d)) return d;
+  }
+
+  // YYYY-MM-DD (ISO)
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const d = new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+    if (!isNaN(d)) return d;
+  }
+
+  // Fallback to JS native (handles "06 Mar 2026" etc)
   const d = new Date(val);
   return isNaN(d) ? null : d;
 }
